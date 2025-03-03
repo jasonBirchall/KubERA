@@ -21,6 +21,14 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
+  default_tags {
+    tags = {
+      Owner     = "jason birchall"
+      Ephemeral = "true"
+      Project   = "kubernetes root cause analysis"
+      Terraform = "true"
+    }
+  }
 }
 
 # Retrieve cluster authentication token (for Kubernetes and Helm providers)
