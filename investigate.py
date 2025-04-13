@@ -8,12 +8,6 @@ from rich.markdown import Markdown
 client = OpenAI()
 console = Console()
 
-# Suppose you have a function that calls the LLM
-def call_llm(messages):
-    response = client.chat.completions.create(model="gpt-4",
-    messages=messages)
-    return response.choices[0].message.content
-
 def fetch_logs(namespace, pod_name, container_name=None, lines=50):
     """
     Attempt to fetch logs. If container_name isn't specified, omits -c
@@ -175,38 +169,6 @@ def gather_metadata(namespace, pod_name):
 
     return metadata
 
-def is_pod_crashing(namespace, pod) -> bool:
-    cmd = f"kubectl get pod {pod} -n {namespace} -o json"
-    pod_data = subprocess.check_output(cmd, shell=True).decode()
-    pod_json = json.loads(pod_data)
-    statuses = pod_json["status"]["containerStatuses"]
-    for s in statuses:
-        if s.get("state", {}).get("waiting", {}).get("reason") == "CrashLoopBackOff":
-            return True
-    return False
-
-def get_pod_status(namespace: str, pod_name: str) -> str:
-    """
-    Returns the pod's phase (e.g. 'Running', 'Pending', 'Succeeded', 'Failed', or 'Unknown').
-    You could also parse containerStatuses for CrashLoopBackOff, etc.
-    """
-    cmd = f"kubectl get pod {pod_name} -n {namespace} -o json"
-    output = subprocess.check_output(cmd, shell=True).decode()
-    pod_json = json.loads(output)
-
-    # Basic check of the top-level phase:
-    phase = pod_json["status"].get("phase", "Unknown")
-
-    # If you specifically want to see if containers are in CrashLoopBackOff, you can do:
-    # container_statuses = pod_json["status"].get("containerStatuses", [])
-    # for cs in container_statuses:
-    #     waiting_state = cs.get("state", {}).get("waiting", {})
-    #     reason = waiting_state.get("reason", "")
-    #     if reason == "CrashLoopBackOff":
-    #         return "CrashLoopBackOff"
-
-    return phase
-
 def llm_diagnose(metadata):
     """
     Given a dictionary 'metadata' which might include:
@@ -327,5 +289,6 @@ def main():
     console.print(Markdown(result))
 
     console.print("[bold green]\nDone![/bold green]")
+
 if __name__ == "__main__":
     main()
