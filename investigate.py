@@ -54,12 +54,31 @@ def is_pod_failing(namespace, pod_name):
 def gather_metadata(namespace, pod_name):
     """
     Runs 'kubectl describe pod' and parses out relevant fields:
-      - Containers, images
-      - Environment variables
-      - Last events
-      - Possibly logs or error messages
-    Returns a dictionary or multiline string summarising it.
+      - Container names & images
+      - Environment variables (naive line-based approach)
+      - Events
+    Returns a dictionary with something like:
+      {
+        "raw_describe": "...",
+        "containers": [
+          {
+            "name": "my-container",
+            "image": "ubuntu:latest",
+            "env": [
+              {"name": "FOO", "value": "bar"},
+              ...
+            ]
+          },
+          ...
+        ],
+        "events": [
+          "Last event lines or reason",
+          ...
+        ]
+      }
+    If there's an error running 'kubectl describe', we store it in {"error_describe": "..."}.
     """
+
     try:
         output = subprocess.check_output(
             f"kubectl describe pod {pod_name} -n {namespace}",
@@ -67,42 +86,88 @@ def gather_metadata(namespace, pod_name):
             stderr=subprocess.STDOUT
         ).decode()
     except subprocess.CalledProcessError as e:
-        # If there's an error, we can store it
         return {"error_describe": e.output.decode()}
 
-    # Optionally parse out certain fields with a simple approach:
-    # For example, get "Image:", "Environment", "Events:"
-    # This is naive text matching; for production, consider better parsing or direct JSON from 'kubectl get -o json'
     lines = output.splitlines()
-    metadata = {"raw_describe": output, "containers": []}
+    metadata = {
+        "raw_describe": output,
+        "containers": [],
+        "events": []
+    }
 
-    # We'll store a minimal approach: container->image, environment lines, events
     current_container = None
+    in_environment = False
+    in_events = False
+
     for line in lines:
         line_stripped = line.strip()
-        # Container name line looks like "Container ID:   hello-container"
-        # or "Name:hello", depending on the version. This is not standardized in every environment
-        # We'll just look for something like "Container ID" or "Container Name"
-        
-        # Example match: "    Image:          ubuntu:latest"
-        if line_stripped.startswith("Image:"):
-            image = line_stripped.split(":", 1)[1].strip()
-            if current_container:
-                current_container["image"] = image
-        elif line_stripped.startswith("Name:"):
+
+        # Detect the "Events:" heading. We'll store subsequent lines as events
+        if line_stripped.startswith("Events:"):
+            in_events = True
+            continue
+
+        # If we are in the events section, parse or store each line until we hit a blank line
+        # or the next big heading. We'll just store them as strings for simplicity.
+        if in_events:
+            if not line_stripped:
+                # blank line might end the events section
+                in_events = False
+            else:
+                # store the event line as is
+                metadata["events"].append(line_stripped)
+            continue
+
+        # If we see a blank line or another heading, end environment parsing
+        if not line_stripped or line_stripped.endswith(":"):
+            in_environment = False
+
+        # For environment, we do a naive approach:
+        if in_environment:
+            # Typically environment lines might look like:
+            # "FOO:    bar"
+            # or "FOO=bar"
+            # We'll handle a couple patterns
+            if current_container is not None:
+                parts = line_stripped.split(":", 1)
+                if len(parts) == 2:
+                    env_name = parts[0].strip()
+                    env_value = parts[1].strip()
+                    # If there's a '=' in the name, we handle that
+                    if '=' in env_name:
+                        # e.g. "FOO=bar"
+                        eq_parts = env_name.split('=', 1)
+                        env_name = eq_parts[0].strip()
+                        env_value = eq_parts[1].strip()
+                    current_container.setdefault("env", []).append({
+                        "name": env_name,
+                        "value": env_value
+                    })
+
+        # Look for environment heading
+        if line_stripped.startswith("Environment:"):
+            in_environment = True
+            continue
+
+        # Look for "Name:" line indicating a container name
+        # e.g. "    Name:         my-container"
+        if line_stripped.startswith("Name:"):
             name_val = line_stripped.split(":", 1)[1].strip()
             # Start a new container record
-            current_container = {"name": name_val}
+            current_container = {"name": name_val, "env": []}
             metadata["containers"].append(current_container)
-        elif line_stripped.startswith("Environment:"):
-            # subsequent lines might be env vars until next blank line or next heading
-            # This is simplistic
-            pass
-        # ... etc. for environment variables or events
-        # For brevity, we'll skip advanced parsing
 
-    # You could parse "Events:" for the last lines that show an error or reasons
-    # Then store them in metadata["events"] or something
+        # Example match: "    Image:          ubuntu:latest"
+        if line_stripped.startswith("Image:"):
+            image_val = line_stripped.split(":", 1)[1].strip()
+            if current_container:
+                current_container["image"] = image_val
+
+    for container in metadata["containers"]:
+        image_name = container.get("image")
+        if image_name:
+            exists = check_docker_image_exists(image_name)
+            container["image_valid"] = exists
 
     return metadata
 
@@ -138,66 +203,68 @@ def get_pod_status(namespace: str, pod_name: str) -> str:
 
     return phase
 
-def llm_diagnose(pod_data):
+def llm_diagnose(metadata):
     """
-    Calls an LLM with a prompt that includes:
-     - The error or status
-     - The relevant fields (image, container name, events)
-    Then asks: "What is the likely cause, and how can we fix it?"
-    """
-    # Build the system prompt or conversation
-    # Assume pod_data is a dictionary from gather_metadata
-    # We'll pass the container info as context
-    containers_info = pod_data.get("containers", [])
-    raw_describe = pod_data.get("raw_describe", "")
-    error = pod_data.get("error_describe", "")
+    Given a dictionary 'metadata' which might include:
+      - "containers": [
+          {
+            "name": str,
+            "image": str,
+            "image_valid": bool,    # if you do Docker checks
+            "env": [ { "name": ..., "value": ... }, ... ]
+          },
+          ...
+        ]
+      - "events": [str, ...]
+      - "raw_describe": str
+      - Possibly other fields you add
 
+    We pass it all to the LLM. A single conversation:
+      1) System message: "Here's how to interpret each field..."
+      2) Assistant message: "Here is the metadata: ... (the JSON dump)."
+      3) User message: "Given this data, what's the likely root cause & fix?"
+
+    The LLM can handle many potential issues (image invalid, environment problems, CrashLoopBackOff, etc.)
+    """
+
+    # 1) Summarise or define the meaning of each field for the LLM in the system prompt
+    #    This ensures it knows how to interpret, e.g. "image_valid: false => the image might be missing."
+    system_prompt = (
+        "You are an AI diagnosing K8s pods. We have some metadata fields:\n"
+        "- 'containers': a list of containers in this pod.\n"
+        "   Each container can have:\n"
+        "      name: container name.\n"
+        "      image: the Docker image string.\n"
+        "      image_valid: a boolean we derived from checking if the image exists in a registry.\n"
+        "         (true means we verified the image can be pulled, false means it's likely invalid or private.)\n"
+        "      env: environment variables in that container.\n"
+        "- 'events': lines from 'kubectl describe' that show warnings or error messages.\n"
+        "- 'raw_describe': the entire text from 'kubectl describe pod'.\n"
+        "If 'image_valid' is false, it might indicate an invalid or non-existent container image.\n"
+        "If 'events' mention CrashLoopBackOff, or ErrImagePull, that's also relevant.\n"
+        "Use these clues to figure out potential root causes.\n"
+        "Finally, propose recommended fixes or next steps.\n"
+    )
+
+    # 2) Turn your metadata into a JSON string. That can be 'assistant' role,
+    #    so the LLM sees it as data it can parse or read.
+    metadata_json = json.dumps(metadata, indent=2)
+
+    # 3) We'll define a user prompt that instructs the LLM to provide a diagnosis
+    user_prompt = (
+        "Given the above metadata, please diagnose the likely cause(s) of any issues. "
+        "Propose how to fix them or what next steps to take. If everything looks fine, say so."
+    )
+
+    # Build the conversation
     messages = [
+        {"role": "system", "content": system_prompt},
         {
-            "role": "system",
-            "content": (
-                "You are an AI diagnosing issues with a Kubernetes pod. "
-                "You have partial metadata from 'kubectl describe', possibly logs. "
-                "Provide a short root cause analysis and possible fix."
-            )
-        }
+            "role": "assistant",
+            "content": f"Here is the metadata:\n{metadata_json}"
+        },
+        {"role": "user", "content": user_prompt}
     ]
-
-    # If there's an error describing the pod, we pass that along
-    if error:
-        messages.append({
-            "role": "assistant",
-            "content": f"Error from describe:\n{error}"
-        })
-    else:
-        # Insert relevant container info, events, etc. You can be creative:
-        container_summaries = "\n".join(
-            f"Container name: {c.get('name')}, image: {c.get('image','')}"
-            for c in containers_info
-        )
-        # We'll keep it basic
-        messages.append({
-            "role": "assistant",
-            "content": (
-                f"Describe data:\n{container_summaries}\n\n"
-                f"Raw describe snippet:\n{raw_describe[:1000]}..."
-                "\n(Truncated for brevity, parse more if needed.)"
-            )
-        })
-
-    # Finally, the user "asks" for a diagnosis
-    messages.append({
-        "role": "user",
-        "content": (
-            "Please summarise the likely cause of any errors and propose a fix. "
-            "If you see nothing relevant, state that the pod might be healthy. "
-            "Be concise but mention relevant container or image details."
-        )
-    })
-
-    # response = client.chat.completions.create(model="gpt-4",
-    # messages=messages)
-    # Call the model
     response = client.chat.completions.create(
         model="gpt-4",
         messages=messages,
@@ -205,36 +272,39 @@ def llm_diagnose(pod_data):
     )
     return response.choices[0].message.content
 
-def investigate_issue(namespace: str, pod_name: str) -> str:
+
+def check_docker_image_exists(image_name: str) -> bool:
     """
-    Very naive logic:
-    - Start a conversation describing the crash
-    - If the LLM mentions "FETCH_LOGS", we provide logs
-    - Otherwise, we return the LLM's final output
+    Returns True if 'docker manifest inspect <image_name>' succeeds,
+    otherwise returns False.
+    Note: requires Docker installed and a running Docker daemon.
     """
-    conversation = [
-        {"role": "system", "content":
-            "You are an AI diagnosing a K8s pod that may be unhealthy. "
-            "If you need logs, respond with 'FETCH_LOGS'. "
-            "Eventually provide a final root cause if any."},
-        {"role": "user", "content": f"The pod {pod_name} in {namespace} might be failing. Please investigate."},
-    ]
+    cmd = ["docker", "manifest", "inspect", image_name]
+    try:
+        subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        return True
+    except subprocess.CalledProcessError as e:
+        # Non-zero exit code indicates the image probably doesn't exist
+        # or there's some networking/credential issue
+        return False
 
-    for step in range(5):  # up to 5 steps
-        llm_reply = call_llm(conversation)
-
-        if "FETCH_LOGS" in llm_reply.upper():
-            logs = fetch_logs(namespace, pod_name)
-            conversation.append({"role": "assistant", "content": f"Here are logs:\n{logs}"})
-        else:
-            # No more tool requests, so we consider this final
-            return llm_reply
-
-    return "Reached max steps without conclusion"
+def inspect_docker_image(image_name: str) -> str:
+    """
+    Attempts to run 'docker manifest inspect <image_name>'.
+    Returns the output as a string if successful,
+    or an error message if not.
+    """
+    cmd = ["docker", "manifest", "inspect", image_name]
+    try:
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode()
+        return output
+    except subprocess.CalledProcessError as e:
+        return f"Error inspecting image '{image_name}': {e.output.decode()}"
 
 def main():
     namespace = "default"
-    pod_name = "hello-world-8477844756-wqc4m"
+    pod_name = "hello-world-8477844756-wqc4m" # Broken pod
+    # pod_name = "hello-world-797766869f-5tnlc" # Working pod
     # 1) Check if failing
     failing = is_pod_failing(namespace, pod_name)
     if not failing:
