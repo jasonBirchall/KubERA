@@ -15,12 +15,34 @@ def fetch_logs(namespace, pod):
     cmd = f"kubectl logs {pod} -n {namespace} --tail=50"
     return subprocess.check_output(cmd, shell=True).decode()
 
-def investigate_issue(namespace, pod):
-    conversation = [
-      {"role": "system", "content": "You are an AI diagnosing a K8s pod crash. Use the described method to gather data."},
-      {"role": "user", "content": f"The pod {pod} in {namespace} is in CrashLoopBackOff state."}
-    ]
+def is_pod_crashing(namespace, pod) -> bool:
+    cmd = f"kubectl get pod {pod} -n {namespace} -o json"
+    pod_data = subprocess.check_output(cmd, shell=True).decode()
+    pod_json = json.loads(pod_data)
+    statuses = pod_json["status"]["containerStatuses"]
+    for s in statuses:
+        if s.get("state", {}).get("waiting", {}).get("reason") == "CrashLoopBackOff":
+            return True
+    return False
 
+def investigate_issue(namespace, pod):
+    if not is_pod_crashing(namespace, pod):
+        return "Pod is not in CrashLoopBackOff or has recovered - system is OK."
+    conversation = [
+        {
+            "role": "system",
+            "content": (
+                "You are an AI diagnosing a K8s pod crash. "
+                "If the system is actually healthy or not showing errors, reply 'SYSTEM_OK'. "
+                "If you need logs or describes, say 'FETCH_LOGS' or 'DESCRIBE_POD', etc. "
+                "Otherwise, explain the root cause or final result."
+            )
+        },
+        {
+            "role": "user",
+            "content": f"The pod {pod} in {namespace} is in CrashLoopBackOff state."
+        }
+    ]
     # We'll do a simple loop: ask the LLM, see if it requests logs, gather logs, feed them back
     for step in range(5):  # up to 5 steps
         llm_output = call_llm(conversation)
@@ -37,4 +59,4 @@ def investigate_issue(namespace, pod):
 
 # Finally, do something to call investigate_issue. For example, if you see a pod failing:
 if __name__ == "__main__":
-    print(investigate_issue("default", "hello-deployment-123-abc"))
+    print(investigate_issue("default", "hello-world-797766869f-klj4p"))
