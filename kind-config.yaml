@@ -1,0 +1,10 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: demo-cluster
+nodes:
+  - role: control-plane
+    # These extra port mappings forward ports from your local machine to the cluster node.
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
