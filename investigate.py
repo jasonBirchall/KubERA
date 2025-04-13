@@ -1,8 +1,12 @@
 from openai import OpenAI
 
-client = OpenAI()
 import subprocess
 import json
+from rich.console import Console
+from rich.markdown import Markdown
+
+client = OpenAI()
+console = Console()
 
 # Suppose you have a function that calls the LLM
 def call_llm(messages):
@@ -305,24 +309,23 @@ def main():
     namespace = "default"
     pod_name = "hello-world-8477844756-wqc4m" # Broken pod
     # pod_name = "hello-world-797766869f-5tnlc" # Working pod
-    # 1) Check if failing
-    failing = is_pod_failing(namespace, pod_name)
-    if not failing:
-        print(f"Pod {pod_name} doesn't appear to be failing. All good!")
+
+    console.print(f"[bold cyan]Checking pod [yellow]{pod_name}[/yellow] in namespace [magenta]{namespace}[/magenta]...[/bold cyan]")
+
+    if not is_pod_failing(namespace, pod_name):
+        console.print("[bold green]Pod is healthy! No issues found.[/bold green]")
         return
 
-    # 2) If failing, gather metadata
-    pod_data = gather_metadata(namespace, pod_name)
+    console.print("[bold red]Pod appears to be in an error state. Gathering metadata...[/bold red]")
+    metadata = gather_metadata(namespace, pod_name)
 
-    # 3) Optionally fetch logs from a known container
-    # logs = fetch_logs(namespace, pod_name, container_name="mycontainer")
-    # we could store it in pod_data if we want the LLM to see logs, too
-    # e.g. pod_data["some_logs"] = logs
+    console.print("[bold blue]Metadata gathered. Now calling the LLM for a diagnosis...[/bold blue]")
+    result = llm_diagnose(metadata)
 
-    # 4) Diagnose
-    result = llm_diagnose(pod_data)
-    print("=== LLM DIAGNOSIS ===")
-    print(result)
+    console.print("[bold white on magenta]\nLLM DIAGNOSIS:[/bold white on magenta]")
+    # We can render the LLM's result as Markdown for nice formatting
+    console.print(Markdown(result))
 
+    console.print("[bold green]\nDone![/bold green]")
 if __name__ == "__main__":
     main()
