@@ -1,15 +1,14 @@
-import openai
+from openai import OpenAI
+
+client = OpenAI()
 import subprocess
 import json
 
 # Suppose you have a function that calls the LLM
 def call_llm(messages):
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=messages,
-        # consider function calling or "ReAct style" instructions
-    )
-    return response["choices"][0]["message"]["content"]
+    response = client.chat.completions.create(model="gpt-4",
+    messages=messages)
+    return response.choices[0].message.content
 
 def fetch_logs(namespace, pod):
     # or use the python kubernetes library
@@ -25,7 +24,7 @@ def investigate_issue(namespace, pod):
     # We'll do a simple loop: ask the LLM, see if it requests logs, gather logs, feed them back
     for step in range(5):  # up to 5 steps
         llm_output = call_llm(conversation)
-        
+
         # parse llm_output to see if it says "fetch logs" or "describe pod" etc.
         if "FETCH_LOGS" in llm_output:
             logs = fetch_logs(namespace, pod)
