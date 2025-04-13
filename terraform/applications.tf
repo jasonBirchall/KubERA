@@ -5,8 +5,6 @@ resource "helm_release" "kube_prometheus_stack" {
   chart            = "kube-prometheus-stack"
   namespace        = "monitoring"
   create_namespace = true
-  # values can be customized as needed for retention, resource limits, etc.
-  # (Using default values for simplicity)
 }
 
 # Helm release: Loki for log aggregation
@@ -16,7 +14,6 @@ resource "helm_release" "loki" {
   chart            = "loki"
   namespace        = "logging"
   create_namespace = true
-  # (Optional) Provide values to integrate with Fluent Bit if needed
 }
 
 # Helm release: ArgoCD for GitOps continuous delivery
@@ -35,7 +32,6 @@ resource "helm_release" "argo_cd" {
       }
     })
   ]
-  # The above values block disables ingress by default (enable and configure as needed)
 }
 
 # Helm release: Fluent Bit for log forwarding with GDPR compliance (log redaction)
