@@ -1,173 +1,81 @@
-# 🤖 Kubernetes Root Cause Analysis Dashboard
+# K8s REACT Root Cause Analysis Agent
 
-## 🗣️ Overview
+## Overview
+This repository demonstrates how to create a local Kubernetes cluster using [kind](https://kind.sigs.k8s.io/) and deploy a simple “Hello World” application. We use the `nginxdemos/hello` container image, which listens on port 80 and serves a basic “Welcome to NGINX” page.
 
-This project aims to provide a real-time **Site Reliability Engineering (SRE) Dashboard** for Kubernetes environments, focusing on the **Four Golden Signals** (Latency, Traffic, Errors, and Saturation). It integrates an **agent-based diagnostic workflow** powered by Python, Dash, and Kubernetes APIs to visualise system health, provide actionable recommendations, and assist in Root Cause Analysis (RCA).
+## Prerequisites
+1. **Docker** installed and running.  
+2. **kubectl** installed (v1.19+ recommended).  
+3. **kind** installed (v0.17+ recommended).  
+4. A Unix-like shell with `make` installed (for running the provided Makefile).
 
-The dashboard is designed with scalability and usability in mind, making it a valuable tool for Site Reliability Engineers (SREs), DevOps engineers, and organisations operating Kubernetes clusters.
+## Files
+- **kind-config.yaml**: Defines the local cluster configuration.  
+- **Makefile**: Contains helpful commands for cluster lifecycle management, app deployment, and teardown.
 
----
+## Quick Start
 
-## ⏩ Features
-
-- **Real-Time Visualisation**:
-
-  - Displays metrics for Latency, Traffic, Errors, and Saturation.
-  - Intuitive and interactive charts powered by Dash and Plotly.
-
-- **Agent-Based Diagnostics**:
-
-  - Iterative workflow for RCA, leveraging Kubernetes logs, metrics, and events.
-  - Dynamic reasoning to provide actionable insights.
-
-- **Customisable Recommendations**:
-
-  - Automatically suggests fixes for common Kubernetes issues.
-  - Tracks and displays incident history.
-
-- **Privacy-Preserving Architecture**:
-  - All data processing occurs within the Kubernetes cluster.
-
----
-
-## 🌴 Project Structure
-
-```
-.
-├── app/                          # Application logic
-│   ├── app.py                    # Flask and Dash app definition
-│   ├── config/                   # Configuration files
-│   │   ├── app_config.py         # Application-specific configuration
-│   │   ├── logging_config.py     # Logging setup
-│   │   └── routes_config.py      # Flask route configuration
-│   ├── routes/                   # Flask routes
-│   │   ├── api_route.py          # API endpoints
-│   │   └── index_route.py        # Root route
-│   ├── services/                 # Core services
-│   │   ├── database_service.py   # Handles database interactions
-│   │   ├── figure_service.py     # Generates data for dashboard visualisations
-│   │   └── __init__.py
-│   ├── run.py                    # Application entry point
-│   ├── assets/                   # Static files (e.g., CSS)
-│   │   └── main.css              # Dashboard styling
-│   └── __init__.py
-├── grafana/                      # Optional Grafana setup
-│   ├── Dockerfile                # Dockerfile for Grafana
-│   ├── dashboards/               # Pre-configured Grafana dashboards
-│   └── provisioning/             # Provisioning files for Grafana
-├── helm/                         # Helm chart for Kubernetes deployment
-│   └── kubera/
-│       ├── Chart.yaml            # Helm chart metadata
-│       ├── values-prod.yaml      # Production values
-│       └── templates/            # Kubernetes templates
-├── Dockerfile                    # Dockerfile for the main app
-├── docker-compose.yaml           # Local development environment setup
-├── pyproject.toml                # Python project metadata
-├── uv.lock                       # Dependency lock file
-├── README.md                     # This file
-└── .dockerignore                 # Docker build exclusions
-```
-
----
-
-## 👶 Getting Started
-
-### Prerequisites
-
-- Python 3.12+
-- Docker & Docker Compose
-- Kubernetes Cluster (optional for production deployment)
-
-### Installation
-
-1. Clone the repository:
-
+1. **Create the Cluster**  
    ```bash
-   git clone https://github.com/yourusername/kubernetes-rca-dashboard.git
-   cd kubernetes-rca-dashboard
+   make cluster
    ```
+   This command uses the configuration in `kind-config.yaml` to create a local cluster named `demo-cluster`.
 
-2. Build and run the application using Docker Compose:
-
+2. **Deploy the Hello World Application**  
    ```bash
-   docker-compose up --build
+   make deploy
    ```
+   This creates a Kubernetes Deployment called `hello-world`, pulling the `nginxdemos/hello` image.
 
-3. Access the dashboard:
-   - Open your browser and navigate to `http://localhost:4567/dashboard/`.
-
----
-
-## 🔑 Key Concepts
-
-### Four Golden Signals
-
-1. **Latency**: Tracks request/response times for applications.
-2. **Traffic**: Measures the volume of requests handled by the system.
-3. **Errors**: Captures failure rates for requests or system operations.
-4. **Saturation**: Monitors resource utilisation (CPU, memory, etc.).
-
-### Diagnostic Workflow
-
-- Iterative reasoning and acting process for RCA:
-  1. Fetch logs, metrics, or events.
-  2. Formulate hypotheses.
-  3. Validate hypotheses and refine analysis.
-  4. Provide actionable recommendations.
-
-### Privacy and Security
-
-- All data remains within the Kubernetes cluster.
-- No sensitive information is transmitted externally.
-
----
-
-## 🐊 Deployment
-
-### Kubernetes Deployment
-
-1. Package the application using Helm:
-
+3. **Expose the App**  
    ```bash
-   helm package helm/kubera
+   make expose
    ```
+   This exposes the deployment as a NodePort service on port 80 inside the cluster, mapped to nodePort 30080 by default.
 
-2. Deploy to your cluster:
+4. **Verify and Test**  
+   - Run:
+     ```bash
+     kubectl get pods
+     kubectl get svc
+     ```
+   - Look for `hello-world` in the list of pods and services.  
+   - If your **kind-config.yaml** maps the cluster’s port 30080 to `localhost:8080`, open a browser or run:
+     ```bash
+     curl http://localhost:8080
+     ```
+     You should see the Hello World page from `nginxdemos/hello`.
 
+5. **Cleaning Up**  
    ```bash
-   helm install kubera helm/kubera -f helm/kubera/values-prod.yaml
+   make teardown
    ```
+   This deletes the kind cluster, removing all related containers and networks. Alternatively, you can delete just the application objects and keep the cluster if you wish.
 
-3. Verify the deployment:
+## Troubleshooting
+1. **Empty Reply from Server**  
+   - Ensure your `kind-config.yaml` includes the correct `extraPortMappings`.  
+   - Double-check that the service `nodePort` and the cluster port are consistent.  
+   - If necessary, run:
+     ```bash
+     kubectl port-forward deployment/hello-world 8081:80
+     curl http://localhost:8081
+     ```
+     If this succeeds, your container is working internally and you may need to adjust your NodePort or port mapping configuration.
 
-   ```bash
-   kubectl get pods
-   ```
+2. **Pod Errors**  
+   - Check logs:
+     ```bash
+     kubectl logs deployment/hello-world
+     ```
+   - Describe pods or events to see if there’s a crash:
+     ```bash
+     kubectl describe pod <pod-name>
+     ```
 
----
-
-## 🥇 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository.
-2. Create a feature branch: `git checkout -b feature-name`.
-3. Commit changes: `git commit -m "Add feature-name"`.
-4. Push to the branch: `git push origin feature-name`.
-5. Open a Pull Request.
-
----
-
-## License
-
-This project is licensed under the MIT License. See the `LICENSE` file for details.
-
----
-
-## Acknowledgements
-
-- [Dash](https://dash.plotly.com/) for interactive visualisations.
-- [Kubernetes](https://kubernetes.io/) for cluster orchestration.
-- [Helm](https://helm.sh/) for deployment management.
-- Open-source contributors for inspiration and guidance.
-
+3. **Removing Just the App**  
+   - You can remove the deployment and service without deleting the cluster:
+     ```bash
+     kubectl delete deployment hello-world
+     kubectl delete svc hello-world
+     ```
