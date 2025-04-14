@@ -51,6 +51,14 @@ demo-app-expose:
 		--port=$(KUBE_PORT) \
 		--overrides='{"spec":{"ports":[{"port":'$(KUBE_PORT)',"nodePort":'$(NODE_PORT)',"protocol":"TCP"}]}}'
 
+create-many-failures:
+	@echo "Create multiple failing pods in the 'default' namespace..."
+	kubectl apply -f k8s/broken-pod.yaml
+
+destroy-many-failures:
+	@echo "Destroying multiple failing pods in the 'default' namespace..."
+	kubectl delete -f k8s/broken-pod.yaml
+
 dashboard-local:
 	@echo "Starting Kubera Assistant dashboard on port $(DASHBOARD_PORT)..."
 	uv run streamlit run app.py
