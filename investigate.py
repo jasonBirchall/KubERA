@@ -8,6 +8,42 @@ from rich.markdown import Markdown
 client = OpenAI()
 console = Console()
 
+def list_broken_pods(namespace="default"):
+    """
+    Return a list of pod names in the given namespace that appear to be failing 
+    (i.e. CrashLoopBackOff, ErrImagePull, etc.).
+    """
+    failing_pods = []
+    try:
+        cmd = f"kubectl get pods -n {namespace} -o json"
+        output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+        data = json.loads(output.decode())
+        
+        # data["items"] is a list of pod objects
+        for item in data.get("items", []):
+            metadata = item.get("metadata", {})
+            pod_name = metadata.get("name")
+            phase = item["status"].get("phase", "")
+            
+            # Quick check: if the overall phase is 'Failed'
+            if phase == "Failed":
+                failing_pods.append(pod_name)
+                continue
+            
+            # Otherwise, check container statuses for CrashLoopBackOff / ErrImagePull
+            container_statuses = item["status"].get("containerStatuses", [])
+            for cstatus in container_statuses:
+                waiting_reason = cstatus.get("state", {}).get("waiting", {}).get("reason", "")
+                if waiting_reason in ["CrashLoopBackOff", "ErrImagePull", "ImagePullBackOff"]:
+                    failing_pods.append(pod_name)
+                    # As soon as we find one container in a failing state, we can mark this pod
+                    break
+        
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Error listing pods in namespace '{namespace}':[/red]\n{e.output.decode()}")
+    
+    return failing_pods
+
 def fetch_logs(namespace, pod_name, container_name=None, lines=50):
     """
     Attempt to fetch logs. If container_name isn't specified, omits -c
@@ -269,24 +305,28 @@ def inspect_docker_image(image_name: str) -> str:
 
 def main():
     namespace = "default"
-    pod_name = "hello-world-8477844756-wqc4m" # Broken pod
-    # pod_name = "hello-world-797766869f-5tnlc" # Working pod
 
-    console.print(f"[bold cyan]Checking pod [yellow]{pod_name}[/yellow] in namespace [magenta]{namespace}[/magenta]...[/bold cyan]")
+    console.print(f"[bold cyan]Checking for broken pods in namespace [yellow]{namespace}[/yellow]...[/bold cyan]")
+    broken_pods = list_broken_pods(namespace=namespace)
 
-    if not is_pod_failing(namespace, pod_name):
-        console.print("[bold green]Pod is healthy! No issues found.[/bold green]")
+    if not broken_pods:
+        console.print("[bold green]No broken pods found! The cluster looks healthy.[/bold green]")
         return
+    
+    console.print("[bold red]Broken pods found:[/bold red]")
+    for bpod in broken_pods:
+        console.print(f" - {bpod}")
+    
+    # Next, for each broken pod, gather metadata and diagnose
+    for pod_name in broken_pods:
+        console.print(f"\n[bold red]Gathering metadata for {pod_name}...[/bold red]")
+        metadata = gather_metadata(namespace, pod_name)
 
-    console.print("[bold red]Pod appears to be in an error state. Gathering metadata...[/bold red]")
-    metadata = gather_metadata(namespace, pod_name)
+        console.print("[bold blue]Now calling the LLM for a diagnosis...[/bold blue]")
+        result = llm_diagnose(metadata)
 
-    console.print("[bold blue]Metadata gathered. Now calling the LLM for a diagnosis...[/bold blue]")
-    result = llm_diagnose(metadata)
-
-    console.print("[bold white on magenta]\nLLM DIAGNOSIS:[/bold white on magenta]")
-    # We can render the LLM's result as Markdown for nice formatting
-    console.print(Markdown(result))
+        console.print("[bold white on magenta]\nLLM DIAGNOSIS:[/bold white on magenta]")
+        console.print(Markdown(result))
 
     console.print("[bold green]\nDone![/bold green]")
 
