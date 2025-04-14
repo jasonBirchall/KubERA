@@ -1,0 +1,175 @@
+/* styles.css */
+body.dark-bg {
+  background-color: #1f1f1f; /* dark background */
+  color: #e0e0e0;
+  margin: 0;
+  font-family: "Open Sans", sans-serif;
+}
+
+.navbar {
+  height: 50px;
+  background-color: #2f2f2f;
+  color: #e0e0e0;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  justify-content: space-between;
+  border-bottom: 1px solid #444;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+}
+
+.nav-title {
+  font-size: 1.3rem;
+  margin-left: 10px;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 20px auto;
+  padding: 0 20px;
+}
+
+.row {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+/* Panels (like Grafana panels) */
+.panel {
+  flex: 1;
+  padding: 15px 20px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.dark-panel {
+  background-color: #252525; /* typical Grafana panel BG */
+  border: 1px solid #383838;
+}
+
+.dark-panel h2 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  color: #ebebeb;
+}
+
+/* Stats row styling */
+.stats-row {
+  display: flex;
+  gap: 20px;
+}
+
+.stats-box {
+  background-color: #2f2f2f;
+  border: 1px solid #444;
+  padding: 10px 15px;
+  border-radius: 4px;
+  text-align: center;
+  flex: 1;
+}
+
+.stat-label {
+  font-size: 0.85rem;
+  color: #aaa;
+  display: block;
+  margin-bottom: 5px;
+}
+
+.stat-value {
+  font-size: 1.4rem;
+  color: #fff;
+}
+
+/* Namespace list styling */
+.namespace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.namespace-item {
+  background-color: #2f2f2f;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ns-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+}
+.ns-status {
+  margin-right: 15px;
+  font-size: 0.9rem;
+}
+.ns-broken {
+  color: #ff5252; /* or #ff0000, etc. */
+}
+.ns-healthy {
+  color: #97fa97;
+}
+.ns-analyze-btn, .ns-analyze-btn-disabled {
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.ns-analyze-btn {
+  background-color: #ff9800; /* orange accent */
+  color: #fff;
+  border: none;
+}
+
+.ns-analyze-btn:hover {
+  background-color: #e68900;
+}
+
+.ns-analyze-btn-disabled {
+  background-color: #555;
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* Buttons */
+.btn {
+  border: none;
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.btn.btn-primary {
+  background-color: #00b4d8;
+  color: #fff;
+}
+
+.btn.btn-primary:hover {
+  background-color: #008fb0;
+}
+
+.btn.btn-secondary {
+  background-color: #555;
+  color: #ccc;
+}
+
+.btn.btn-secondary:hover {
+  background-color: #666;
+}
+
+/* Misc text classes */
+.text-success {
+  color: #97fa97;
+}
+
