@@ -1,0 +1,41 @@
+<!-- templates/analyze.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Analyze Namespace - Grafana Style</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="dark-bg">
+
+<nav class="navbar">
+  <div class="navbar-brand">
+    <span class="nav-title">Namespace Analysis</span>
+  </div>
+  <div>
+    <a href="/" class="btn btn-secondary">← Back</a>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="row">
+    <div class="panel dark-panel">
+      <h2>Namespace: {{ namespace }}</h2>
+
+      {% if broken_pods %}
+      <p>The following pods appear to be failing:</p>
+      <ul>
+        {% for pod in broken_pods %}
+          <li>{{ pod }}</li>
+        {% endfor %}
+      </ul>
+      <button class="btn btn-primary">Analyze in Depth</button>
+      {% else %}
+      <p class="text-success">No broken pods in this namespace!</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

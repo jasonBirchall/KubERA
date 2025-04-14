@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Cluster Overview - Grafana Style</title>
+  <!-- We won't use Bootstrap here – we'll go pure custom (or minimal) to highlight the Grafana look. -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="dark-bg">
+
+<!-- Top Nav -->
+<nav class="navbar">
+  <div class="navbar-brand">
+    <img src="{{ url_for('static', filename='img/k8s-logo.png') }}" alt="K8s" height="30">
+    <span class="nav-title">Kubernetes Overview</span>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="row">
+    <!-- Left Panel for summary stats -->
+    <div class="panel dark-panel">
+      <h2>Cluster Summary</h2>
+      <div class="stats-row">
+        <div class="stats-box">
+          <span class="stat-label">Nodes</span>
+          <span class="stat-value">{{ cluster.nodes }}</span>
+        </div>
+        <div class="stats-box">
+          <span class="stat-label">Pods</span>
+          <span class="stat-value">{{ cluster.pods }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel for namespaces -->
+    <div class="panel dark-panel">
+      <h2>Namespaces</h2>
+      <div class="namespace-list">
+        {% for ns in cluster.namespaces %}
+        <div class="namespace-item">
+          <div class="ns-name">{{ ns.name }}</div>
+          {% if ns.broken_pods %}
+            <div class="ns-status ns-broken">Broken ({{ ns.failing_count }})</div>
+            <a class="ns-analyze-btn" href="{{ url_for('analyze_namespace', namespace=ns.name) }}">
+              Start Analysis →
+            </a>
+          {% else %}
+            <div class="ns-status ns-healthy">Healthy</div>
+            <div class="ns-analyze-btn-disabled">No Action</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

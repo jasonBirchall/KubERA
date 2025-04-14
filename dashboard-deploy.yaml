@@ -72,8 +72,8 @@ spec:
       serviceAccountName: kubera-sa
       containers:
         - name: kubera
-          image: kubera:latest
-          imagePullPolicy: IfNotPresent # Use Never for kind if image is loaded locally
+          image: localhost:5001/kubera:0.0.1
+          imagePullPolicy: Never
           ports:
             - containerPort: 8501
               name: web
