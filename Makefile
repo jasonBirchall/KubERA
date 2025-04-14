@@ -72,6 +72,17 @@ dashboard-docker: check-api-key dashboard-build
 	@echo "Running Kubera Assistant dashboard in Docker on port $(DASHBOARD_PORT)..."
 	docker run -p $(DASHBOARD_PORT):8501 -e OPENAI_API_KEY=$${OPENAI_API_KEY} json0/kubera:$(DASHBOARD_CONTAINER)
 
+install-prometheus:
+	@echo "Installing Prometheus in 'monitoring' namespace..."
+	kubectl apply -f k8s/prometheus.yaml
+
+destroy-prometheus:
+	@echo "Removing Prometheus from the cluster..."
+	kubectl delete -f k8s/prometheus.yaml
+
+prometheus-port-forward:
+	kubectl port-forward -n monitoring service/prometheus-service 9090:9090
+	
 ## Bring up everything in one command:
 ## 1) Create cluster, 2) Deploy app, 3) Expose service
 up: cluster-up demo-app-up demo-app-expose

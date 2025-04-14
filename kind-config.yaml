@@ -8,6 +8,12 @@ nodes:
       - containerPort: 30080
         hostPort: 8501
         protocol: TCP
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+      - containerPort: 30090
+        hostPort: 9090
+        protocol: TCP
 
 containerdConfigPatches:
   - |-

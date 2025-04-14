@@ -24,6 +24,9 @@ nodes:
   - containerPort: 30080
     hostPort: 8501
     protocol: TCP
+  - containerPort: 30090
+    hostPort: 9090
+    protocol: TCP
 EOF
 
 # 3. Add the registry config to the nodes
