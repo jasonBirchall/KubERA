@@ -1,8 +1,0 @@
-app:
-  ingress:
-    host: ""
-
-  deployment:
-    replicaCount: 1
-    env:
-      LOGGING_LEVEL: INFO

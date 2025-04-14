@@ -1,5 +1,0 @@
-FROM docker.io/ollama/ollama:0.3.0
-
-RUN groupadd -r -g 65532 ollama && useradd --create-home --shell /bin/bash --uid 65532 -g ollama ollama
-
-USER 65532:65532
