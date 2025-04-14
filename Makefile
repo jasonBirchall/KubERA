@@ -1,5 +1,3 @@
-# Makefile
-
 CLUSTER_NAME := demo-cluster
 DEPLOYMENT_NAME := hello-world
 SERVICE_NAME := hello-world
@@ -7,8 +5,16 @@ IMAGE_NAME := nginxdemos/hello
 LOCAL_PORT := 8080
 NODE_PORT := 30080
 KUBE_PORT := 80
+DASHBOARD_PORT := 8501
+DASHBOARD_CONTAINER := 0.0.1
 
-.PHONY: cluster deploy expose status teardown up
+.PHONY: cluster deploy expose status teardown up dashboard dashboard-build dashboard-docker
+## Check if OPENAI_API_KEY is set
+check-api-key:
+	@if [ -z "$$OPENAI_API_KEY" ]; then \
+		echo "OPENAI_API_KEY environment variable is not set. Please set it before running."; \
+		exit 1; \
+	fi
 
 ## Create the kind cluster using the specified config.
 cluster:
@@ -40,6 +46,19 @@ status:
 	kubectl get pods -o wide
 	@echo "\nServices:"
 	kubectl get svc -o wide
+
+dashboard-local:
+	@echo "Starting K8s Assistant dashboard on port $(DASHBOARD_PORT)..."
+	uv run streamlit run app.py
+
+## Build the dashboard Docker image
+dashboard-build:
+	@echo "Building K8s Assistant dashboard Docker image..."
+	docker buildx build --platform linux/amd64 . -t json0/kubera:$(DASHBOARD_CONTAINER)
+
+dashboard-docker: check-api-key dashboard-build
+	@echo "Running K8s Assistant dashboard in Docker on port $(DASHBOARD_PORT)..."
+	docker run -p $(DASHBOARD_PORT):8501 -e OPENAI_API_KEY=$${OPENAI_API_KEY} json0/kubera:$(DASHBOARD_CONTAINER)
 
 ## Teardown the entire kind cluster.
 teardown:
