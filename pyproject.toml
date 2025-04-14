@@ -16,4 +16,5 @@ dependencies = [
   "psycopg2-binary>=2.9.10",
   "rich>=14.0.0",
   "statsmodels>=0.14.4",
+  "streamlit>=1.44.1",
 ]
