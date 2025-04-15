@@ -1,41 +1,178 @@
-<!-- templates/analyze.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <title>Analyze Namespace - Grafana Style</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Root Cause Analysis - {{ namespace }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-<body class="dark-bg">
+<body>
+  <div class="main-container">
+    <!-- Left sidebar with icons -->
+    <div class="sidebar">
+      <div class="sidebar-icon"><a href="/" style="color: inherit;"><i class="fas fa-home"></i></a></div>
+      <div class="sidebar-icon"><i class="fas fa-chart-line"></i></div>
+      <div class="sidebar-icon"><i class="fas fa-cube"></i></div>
+      <div class="sidebar-icon"><i class="fas fa-cog"></i></div>
+    </div>
 
-<nav class="navbar">
-  <div class="navbar-brand">
-    <span class="nav-title">Namespace Analysis</span>
-  </div>
-  <div>
-    <a href="/" class="btn btn-secondary">← Back</a>
-  </div>
-</nav>
+    <!-- Main content area -->
+    <div class="content-area">
+      <!-- Top header -->
+      <div class="header">
+        <div class="header-title">
+          <span>Root Cause Analysis: {{ namespace }}</span>
+        </div>
+        <div class="header-controls">
+          <div class="header-actions">
+            <a href="/" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+            <button class="btn btn-primary"><i class="fas fa-sync-alt"></i> Refresh</button>
+          </div>
+        </div>
+      </div>
 
-<div class="container">
-  <div class="row">
-    <div class="panel dark-panel">
-      <h2>Namespace: {{ namespace }}</h2>
-
-      {% if broken_pods %}
-      <p>The following pods appear to be failing:</p>
-      <ul>
-        {% for pod in broken_pods %}
-          <li>{{ pod }}</li>
-        {% endfor %}
-      </ul>
-      <button class="btn btn-primary">Analyze in Depth</button>
-      {% else %}
-      <p class="text-success">No broken pods in this namespace!</p>
-      {% endif %}
+      <!-- Main workspace content -->
+      <div class="workspace" style="overflow-y: auto;">
+        <div class="main-content" style="padding: 20px;">
+          <div class="panel dark-panel" style="background-color: var(--panel-bg); border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+            <h2>Namespace: {{ namespace }}</h2>
+            
+            {% if broken_pods %}
+              <div class="badge badge-danger" style="margin-bottom: 15px;">{{ broken_pods|length }} problematic pods detected</div>
+              
+              {% for pod in broken_pods %}
+                <div class="pod-analysis-card" style="background-color: rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 15px;">
+                    <h3 style="margin: 0;">{{ pod }}</h3>
+                    <span class="badge badge-danger">Failing</span>
+                  </div>
+                  
+                  {% set result = results|selectattr('pod_name', 'equalto', pod)|first %}
+                  
+                  {% if result and result.diagnosis %}
+                    <div class="analysis-section">
+                      <div class="analysis-section-title">AI Diagnosis</div>
+                      <div class="analysis-content" style="white-space: pre-line;">{{ result.diagnosis }}</div>
+                    </div>
+                    
+                    <div class="logs-section" style="margin-top: 20px;">
+                      <div class="analysis-section-title">Pod Events</div>
+                      <div class="logs-container">
+                        {% if result.metadata and result.metadata.events %}
+                          {% for event in result.metadata.events %}
+                            <div class="log-line">{{ event }}</div>
+                          {% endfor %}
+                        {% else %}
+                          <div class="log-line">No events available</div>
+                        {% endif %}
+                      </div>
+                    </div>
+                    
+                    <div style="margin-top: 20px;">
+                      <button class="btn btn-primary" onclick="showFullLogs('{{ pod }}')">
+                        <i class="fas fa-terminal"></i> View Full Logs
+                      </button>
+                      <button class="btn btn-outline">
+                        <i class="fas fa-heartbeat"></i> Check Health Status
+                      </button>
+                    </div>
+                  {% elif result and result.error %}
+                    <div class="analysis-section">
+                      <div class="analysis-section-title">Error</div>
+                      <div class="analysis-content" style="color: var(--danger-color);">
+                        Failed to analyze pod: {{ result.error }}
+                      </div>
+                    </div>
+                  {% else %}
+                    <div class="analysis-section">
+                      <div class="analysis-section-title">Analysis</div>
+                      <div class="analysis-content">
+                        <button class="btn btn-primary" onclick="analyzePod('{{ namespace }}', '{{ pod }}')">
+                          <i class="fas fa-search"></i> Analyze Now
+                        </button>
+                      </div>
+                    </div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="badge badge-success" style="margin-bottom: 15px;">No issues detected</div>
+              <p>All pods in this namespace appear to be running normally.</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
     </div>
   </div>
-</div>
 
+  <!-- Full Logs Modal (hidden by default) -->
+  <div id="logsModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); z-index: 1000;">
+    <div style="position: relative; width: 80%; height: 80%; margin: 5% auto; background-color: var(--panel-bg); border-radius: 8px; padding: 20px; overflow-y: auto;">
+      <button style="position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer;" onclick="closeLogsModal()">×</button>
+      <h2 id="logsModalTitle">Pod Logs</h2>
+      <div id="logsModalContent" class="logs-container" style="height: calc(100% - 60px); overflow-y: auto;"></div>
+    </div>
+  </div>
+
+  <script>
+    // Function to show full logs modal
+    function showFullLogs(podName) {
+      document.getElementById('logsModalTitle').textContent = `Logs: ${podName}`;
+      document.getElementById('logsModalContent').innerHTML = `<div class="log-line">Loading logs for ${podName}...</div>`;
+      document.getElementById('logsModal').style.display = 'block';
+      
+      // In a real implementation, you would fetch the logs via AJAX
+      // For now, let's simulate it with a timeout and mock data
+      setTimeout(() => {
+        const mockLogs = [
+          '2025-03-21T10:15:32Z INFO Starting container',
+          '2025-03-21T10:15:33Z INFO Initializing application',
+          '2025-03-21T10:15:35Z WARN Resource allocation approaching limits',
+          '2025-03-21T10:15:40Z ERROR Failed to connect to database',
+          '2025-03-21T10:15:42Z ERROR Container exited with code 1',
+          '2025-03-21T10:16:00Z INFO Restarting container'
+        ];
+        
+        document.getElementById('logsModalContent').innerHTML = mockLogs.map(log => 
+          `<div class="log-line">${log}</div>`
+        ).join('');
+      }, 1000);
+    }
+    
+    // Function to close logs modal
+    function closeLogsModal() {
+      document.getElementById('logsModal').style.display = 'none';
+    }
+    
+    // Function to trigger pod analysis
+    function analyzePod(namespace, podName) {
+      const button = event.currentTarget;
+      button.disabled = true;
+      button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analyzing...';
+      
+      // In a real implementation, you would make an AJAX call to your API
+      // For example:
+      fetch('/api/diagnose', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          namespace: namespace,
+          pod_name: podName
+        }),
+      })
+      .then(response => response.json())
+      .then(data => {
+        // Reload the page to show the analysis
+        window.location.reload();
+      })
+      .catch(error => {
+        button.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error';
+        console.error('Error:', error);
+      });
+    }
+  </script>
 </body>
 </html>

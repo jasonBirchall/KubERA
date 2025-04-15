@@ -1,60 +1,329 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <title>Cluster Overview - Grafana Style</title>
-  <!-- We won't use Bootstrap here – we'll go pure custom (or minimal) to highlight the Grafana look. -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KubeRA - Kubernetes Root Analysis</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <!-- Adding Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-<body class="dark-bg">
+<body>
+  <div class="main-container">
+    <!-- Left sidebar with icons -->
+    <div class="sidebar">
+      <div class="sidebar-icon"><i class="fas fa-home"></i></div>
+      <div class="sidebar-icon"><i class="fas fa-chart-line"></i></div>
+      <div class="sidebar-icon"><i class="fas fa-cube"></i></div>
+      <div class="sidebar-icon"><i class="fas fa-cog"></i></div>
+    </div>
 
-<!-- Top Nav -->
-<nav class="navbar">
-  <div class="navbar-brand">
-    <img src="{{ url_for('static', filename='img/k8s-logo.png') }}" alt="K8s" height="30">
-    <span class="nav-title">Kubernetes Overview</span>
-  </div>
-</nav>
-
-<div class="container">
-  <div class="row">
-    <!-- Left Panel for summary stats -->
-    <div class="panel dark-panel">
-      <h2>Cluster Summary</h2>
-      <div class="stats-row">
-        <div class="stats-box">
-          <span class="stat-label">Nodes</span>
-          <span class="stat-value">{{ cluster.nodes }}</span>
+    <!-- Main content area -->
+    <div class="content-area">
+      <!-- Top header -->
+      <div class="header">
+        <div class="header-title">
+          <span>Timeline</span>
+          <!-- Add dropdown for presets if needed -->
+          <select id="presetSelector" class="search-input" style="margin-left: 10px;">
+            <option value="all">All Events</option>
+            <option value="high-priority">High Priority</option>
+            <option value="recent">Last 6 hours</option>
+          </select>
         </div>
-        <div class="stats-box">
-          <span class="stat-label">Pods</span>
-          <span class="stat-value">{{ cluster.pods }}</span>
+        <div class="header-controls">
+          <div class="header-actions">
+            <button class="btn btn-outline"><i class="fas fa-sync-alt"></i> Refresh</button>
+            <button class="btn btn-primary"><i class="fas fa-plus"></i> Add Alert</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main workspace with filters and content -->
+      <div class="workspace">
+        <!-- Left filter panel -->
+        <div class="filter-panel">
+          <div class="filter-section">
+            <div class="filter-title">Filters</div>
+            <input type="text" class="search-input" placeholder="Type / to search" style="width: 100%; margin-bottom: 10px;">
+          </div>
+
+          <div class="filter-section">
+            <div class="filter-title">App</div>
+            <div class="filter-options">
+              <div class="filter-tag active">All</div>
+              <div class="filter-tag">Frontend</div>
+              <div class="filter-tag">Backend</div>
+              <div class="filter-tag">Database</div>
+            </div>
+          </div>
+
+          <div class="filter-section">
+            <div class="filter-title">Alert</div>
+            <div class="filter-options">
+              <div class="filter-tag active">All</div>
+              <div class="filter-tag">Critical</div>
+              <div class="filter-tag">Warning</div>
+              <div class="filter-tag">Info</div>
+            </div>
+          </div>
+
+          <div class="filter-section">
+            <div class="filter-title">Priority</div>
+            <div class="filter-options">
+              <div class="filter-tag active">All</div>
+              <div class="filter-tag">High</div>
+              <div class="filter-tag">Medium</div>
+              <div class="filter-tag">Low</div>
+            </div>
+          </div>
+
+          <div class="filter-section">
+            <div class="filter-title">Source</div>
+            <div class="filter-options">
+              <div class="filter-tag active">All</div>
+              <div class="filter-tag">Kubernetes</div>
+              <div class="filter-tag">Container</div>
+              <div class="filter-tag">Application</div>
+              <div class="filter-tag">System</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main content area with timeline -->
+        <div class="main-content">
+          <div class="timeline-header">
+            <div class="timeline-controls">
+              <button class="btn btn-outline btn-sm">Group by | Alert <i class="fas fa-caret-down"></i></button>
+              <button class="btn btn-primary btn-sm"><i class="fas fa-chart-line"></i> Trend Analysis</button>
+            </div>
+          </div>
+
+          <!-- Timeline visualization -->
+          <div class="timeline-view">
+            <div class="timeline-ruler">
+              <div>Mar 21 07:10</div>
+              <div>Mar 21 08:02</div>
+              <div>Mar 21 08:54</div>
+              <div>Mar 21 09:46</div>
+              <div>Mar 21 10:38</div>
+              <div>Mar 21 11:30</div>
+              <div>Mar 21 12:22</div>
+            </div>
+
+            <!-- Timeline tracks -->
+            <div class="timeline-tracks">
+              <!-- Each track represents a service or component -->
+              <div class="timeline-track">
+                <div class="timeline-track-title">HighLatencyForCustomerCheckout (12)</div>
+                <!-- Events are positioned along the track -->
+                <div class="timeline-event severity-high" style="left: 10%; width: 3%"></div>
+                <div class="timeline-event severity-high" style="left: 65%; width: 2%"></div>
+              </div>
+
+              <div class="timeline-track">
+                <div class="timeline-track-title">KubeDeploymentReplicasMismatch (3)</div>
+                <div class="timeline-event severity-medium" style="left: 30%; width: 2%"></div>
+              </div>
+
+              <div class="timeline-track">
+                <div class="timeline-track-title">KubePodCrashLooping (2)</div>
+                <div class="timeline-event severity-high" style="left: 25%; width: 1%"></div>
+              </div>
+
+              <div class="timeline-track">
+                <div class="timeline-track-title">TargetDown (1)</div>
+                <div class="timeline-event severity-low" style="left: 40%; width: 1%"></div>
+              </div>
+
+              <div class="timeline-track">
+                <div class="timeline-track-title">MinishopHighLatency (1)</div>
+                <div class="timeline-event severity-high" style="left: 50%; width: 1%"></div>
+              </div>
+
+              <div class="timeline-track">
+                <div class="timeline-track-title">PodOOMKilled (5)</div>
+                <div class="timeline-event severity-medium" style="left: 15%; width: 1%"></div>
+                <div class="timeline-event severity-medium" style="left: 35%; width: 1%"></div>
+                <div class="timeline-event severity-medium" style="left: 55%; width: 1%"></div>
+                <div class="timeline-event severity-medium" style="left: 75%; width: 1%"></div>
+                <div class="timeline-event severity-medium" style="left: 95%; width: 1%"></div>
+              </div>
+
+              <div class="timeline-track">
+                <div class="timeline-track-title">CrashLoopBackOff (3)</div>
+                <div class="timeline-event severity-medium" style="left: 60%; width: 5%"></div>
+              </div>
+
+              <div class="timeline-track">
+                <div class="timeline-track-title">SchedulingWarning (2)</div>
+                <div class="timeline-event severity-low" style="left: 45%; width: 2%"></div>
+              </div>
+            </div>
+
+            <!-- Events list -->
+            <div class="events-list">
+              <h3>Events</h3>
+              
+              <div class="events-tabs">
+                <button class="btn btn-outline btn-sm active">Grouped Events (8)</button>
+                <button class="btn btn-outline btn-sm">Event Stream (53)</button>
+              </div>
+
+              <table class="events-table">
+                <thead>
+                  <tr>
+                    <th>Priority</th>
+                    <th>Alert</th>
+                    <th>Cluster</th>
+                    <th>Events</th>
+                    <th>Latest</th>
+                    <th>Latest event</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr onclick="openAnalysisPanel('PodOOMKilled')">
+                    <td><span class="badge badge-danger">HIGH</span></td>
+                    <td>PodOOMKilled</td>
+                    <td>nicolas-multi-node-cluster</td>
+                    <td>View 6 events</td>
+                    <td>Mar 21, 25 10:42</td>
+                    <td>Pod analytics-exporter-fast-76897854... OOM killed</td>
+                  </tr>
+                  <tr onclick="openAnalysisPanel('CrashLoopBackOff')">
+                    <td><span class="badge badge-danger">HIGH</span></td>
+                    <td>CrashLoopBackOff</td>
+                    <td>nicolas-multi-node-cluster</td>
+                    <td>View 3 events</td>
+                    <td>Mar 21, 25 11:02</td>
+                    <td>Crashing pod shop-app-57b764d761...</td>
+                  </tr>
+                  <tr onclick="openAnalysisPanel('HighLatency')">
+                    <td><span class="badge badge-danger">HIGH</span></td>
+                    <td>HighLatencyForCustomerCheckout</td>
+                    <td>nicolas-multi-node-cluster</td>
+                    <td>View 12 events</td>
+                    <td>Mar 21, 25 09:35</td>
+                    <td>HTTP Requests to the '/checkout' endpoint...</td>
+                  </tr>
+                  <tr onclick="openAnalysisPanel('DeploymentMismatch')">
+                    <td><span class="badge badge-warning">MEDIUM</span></td>
+                    <td>KubeDeploymentReplicasMismatch</td>
+                    <td>nicolas-multi-node-cluster</td>
+                    <td>View 3 events</td>
+                    <td>Mar 21, 25 12:05</td>
+                    <td>Deployment has not matched the expected...</td>
+                  </tr>
+                  <tr onclick="openAnalysisPanel('PodCrashLooping')">
+                    <td><span class="badge badge-warning">MEDIUM</span></td>
+                    <td>KubePodCrashLooping</td>
+                    <td>nicolas-multi-node-cluster</td>
+                    <td>View 3 events</td>
+                    <td>Mar 21, 25 09:32</td>
+                    <td>Pod is crash looping.</td>
+                  </tr>
+                  <tr onclick="openAnalysisPanel('TargetDown')">
+                    <td><span class="badge badge-warning">MEDIUM</span></td>
+                    <td>TargetDown</td>
+                    <td>nicolas-multi-node-cluster</td>
+                    <td>View 3 events</td>
+                    <td>Mar 21, 25 10:17</td>
+                    <td>One or more targets are unreachable.</td>
+                  </tr>
+                  <tr onclick="openAnalysisPanel('MinishopLatency')">
+                    <td><span class="badge badge-info">LOW</span></td>
+                    <td>MinishopHighLatency</td>
+                    <td>nicolas-multi-node-cluster</td>
+                    <td>View 1 event</td>
+                    <td>Mar 21, 25 09:10</td>
+                    <td>High latency detected in Minishop application</td>
+                  </tr>
+                  <tr onclick="openAnalysisPanel('SchedulingWarning')">
+                    <td><span class="badge badge-info">LOW</span></td>
+                    <td>FailedScheduling</td>
+                    <td>nicolas-multi-node-cluster</td>
+                    <td>View 2 events</td>
+                    <td>Mar 21, 25 08:25</td>
+                    <td>Warning for Pod deployment/default/robusta-holmes...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- Right Panel for namespaces -->
-    <div class="panel dark-panel">
-      <h2>Namespaces</h2>
-      <div class="namespace-list">
-        {% for ns in cluster.namespaces %}
-        <div class="namespace-item">
-          <div class="ns-name">{{ ns.name }}</div>
-          {% if ns.broken_pods %}
-            <div class="ns-status ns-broken">Broken ({{ ns.failing_count }})</div>
-            <a class="ns-analyze-btn" href="{{ url_for('analyze_namespace', namespace=ns.name) }}">
-              Start Analysis →
-            </a>
-          {% else %}
-            <div class="ns-status ns-healthy">Healthy</div>
-            <div class="ns-analyze-btn-disabled">No Action</div>
-          {% endif %}
+  <!-- Analysis Panel (hidden by default) -->
+  <div id="analysisPanel" class="analysis-panel">
+    <div class="analysis-header">
+      <h2 id="analysisTitle">Investigating alert MinishopHighLatency</h2>
+      <button class="analysis-close" onclick="closeAnalysisPanel()">&times;</button>
+    </div>
+    <div class="analysis-content">
+      <div class="analysis-section">
+        <div class="analysis-section-title">Root Cause</div>
+        <div class="root-cause-content">
+          <ol>
+            <li>Query Performance: The latency is likely due to inefficient database queries. Consider adding indexes or rewriting the query for better performance.</li>
+            <li>Database Performance: Check the database server's performance metrics to ensure it is not overloaded or experiencing resource constraints.</li>
+            <li>Scale Resources: If the database is under heavy load, consider scaling the resources allocated to it or distributing the load more effectively.</li>
+            <li>Monitor and Profile: Use database profiling tools to monitor query performance and identify any other slow queries that may need optimization.</li>
+          </ol>
         </div>
-        {% endfor %}
+      </div>
+
+      <div class="analysis-section">
+        <div class="analysis-section-title">Runbooks</div>
+        <div class="runbook-content">
+          <p>Follow these steps to address the high latency issue:</p>
+          <ol>
+            <li>Check the database's performance metrics</li>
+            <li>Analyze slow query logs</li>
+            <li>Optimize the identified problematic queries</li>
+            <li>Consider adding appropriate indexes</li>
+            <li>Monitor the system after changes to verify improvement</li>
+          </ol>
+        </div>
+      </div>
+
+      <div class="analysis-section">
+        <div class="analysis-section-title">Related Logs</div>
+        <div class="logs-container">
+          <div class="log-line"><span class="log-timestamp">2025-03-21T11:52:582</span> {"level":30,"time":1742557978538,"pid":1,"hostname":"fraud-service-5f8b576878-s1npb"}</div>
+          <div class="log-line"><span class="log-timestamp">2025-03-21T11:52:582</span> {"level":30,"time":1742557984937,"pid":1,"hostname":"fraud-service-5f8b576878-s1npb"}</div>
+          <div class="log-line"><span class="log-timestamp">2025-03-21T11:52:582</span> {"level":30,"time":1742557978537,"pid":1,"hostname":"checkout-service-66cb4b6c4b-77ch1"}</div>
+          <div class="log-line"><span class="log-timestamp">2025-03-21T11:53:852</span> {"level":30,"time":1742557985516,"pid":1,"hostname":"checkout-service-66cb4b6c4b-77ch1"}</div>
+        </div>
+      </div>
+
+      <div class="analysis-section">
+        <div class="analysis-section-title">Gathered data with 5 tools</div>
+        <ul>
+          <li>Fetch metadata and history</li>
+          <li>Fetched Tempo traces with min_duration=4s (('min_duration': '4s', 'deployment_name': 'minishop', 'namespace_name': 'default'))</li>
+          <li>Fetched Tempo trace with trace_id=e342e3a277a3c543603c09e9157a8205 ((trace_id: 'e342e3a277a3c543603c09e9157a8205'))</li>
+          <li>Fetched Loki logs((resource_type: 'pod', 'resource_name': 'fraud-service-5f8b576878-s1npb', 'namespace': 'minishop'))</li>
+          <li>Fetched Loki logs((resource_type: 'pod', 'resource_name': 'checkout-service-66cb4b6c4b-77ch1', 'namespace': 'minishop'))</li>
+        </ul>
       </div>
     </div>
   </div>
-</div>
 
+  <!-- JavaScript for interactivity -->
+  <script>
+    function openAnalysisPanel(alertType) {
+      const panel = document.getElementById('analysisPanel');
+      const title = document.getElementById('analysisTitle');
+      title.textContent = 'Investigating alert ' + alertType;
+      panel.classList.add('open');
+    }
+
+    function closeAnalysisPanel() {
+      const panel = document.getElementById('analysisPanel');
+      panel.classList.remove('open');
+    }
+  </script>
 </body>
 </html>
