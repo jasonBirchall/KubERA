@@ -1,6 +1,7 @@
 import subprocess
 import json
 from rich.console import Console
+from agent.tools.docker_tool import DockerTool
 
 console = Console()
 
@@ -153,7 +154,7 @@ class K8sTool:
         for container in metadata["containers"]:
             image_name = container.get("image")
             if image_name:
-                exists = check_docker_image_exists(image_name)
+                exists = DockerTool(image_name).check_docker_image_exists()
                 container["image_valid"] = exists
 
         return metadata
