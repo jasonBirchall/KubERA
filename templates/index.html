@@ -61,10 +61,12 @@
       </div>
 
       <div class="filter-section">
-        <div class="filter-title">App</div>
+        <div class="filter-title">Namespace</div>
         <div class="filter-tags">
           <div class="filter-tag active">All</div>
-          <div class="filter-tag">APP</div>
+          <div class="filter-tag">default</div>
+          <div class="filter-tag">kube-system</div>
+          <div class="filter-tag">monitoring</div>
         </div>
       </div>
 
@@ -199,7 +201,6 @@
               <tr>
                 <th>Priority</th>
                 <th>Alert</th>
-                <th>Cluster</th>
                 <th>Events</th>
                 <th>Latest</th>
                 <th>Latest event</th>
@@ -285,7 +286,6 @@
             row.innerHTML = `
               <td><span class="badge ${badgeClass}">${severityText}</span></td>
               <td>${issue.name}</td>
-              <td>demo-cluster</td>
               <td>View ${issue.count} events</td>
               <td>${latestPod ? latestPod.timestamp : '-'}</td>
               <td>${latestPod ? 'Pod ' + latestPod.name : '-'}</td>
