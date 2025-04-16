@@ -90,47 +90,65 @@ class K8sTool:
 
     def determine_issue_type(self, metadata: dict) -> str:
         """
-        Infers the type of issue (CrashLoopBackOff, PodOOMKilled, ImagePullError, etc.)
-        by examining:
-          - The container statuses (waitingReason, terminatedReason)
-          - The 'events' lines from 'kubectl describe'
-        Returns a string like "CrashLoopBackOff", "PodOOMKilled", "ImagePullError", etc.
-        or "PodFailure" if unknown.
+        Infers the type of issue (CrashLoopBackOff, PodOOMKilled, ImagePullError, 
+        FailingLiveness, etc.)
         """
 
         events = metadata.get("events", [])
         containers = metadata.get("containers", [])
 
-        # 1) Check for known patterns in 'events'
+        # 1) Inspect events for known patterns
         for event_line in events:
             low = event_line.lower()
+
+            # OOMKilled might show up in events as well,
+            # but often it's only in container's 'terminated.reason'
             if "oomkilled" in low:
                 return "PodOOMKilled"
-            elif "crashloopbackoff" in low:
+
+            # If there's a line about liveness probe failing => 
+            # label it "FailingLiveness" (or "LivenessProbeFailure")
+            if "liveness probe failed" in low:
+                return "FailingLiveness"
+
+            # Some readiness messages might show up similarly
+            # if "readiness probe failed" in low:
+            #    return "FailingReadiness"
+
+            # CrashLoopBackOff can show up in events directly
+            if "crashloopbackoff" in low:
                 return "CrashLoopBackOff"
-            elif "errimagepull" in low or "imagepullbackoff" in low:
+
+            # Image errors
+            if "errimagepull" in low or "imagepullbackoff" in low:
                 return "ImagePullError"
-            elif "failedscheduling" in low or "schedulingfailed" in low:
+
+            # Scheduling
+            if "failedscheduling" in low or "schedulingfailed" in low:
                 return "FailedScheduling"
 
-        # 2) Check container states
+        # 2) Inspect containers for waiting/terminated reasons
         for cinfo in containers:
             wreason = cinfo.get("waitingReason", "")
             treason = cinfo.get("terminatedReason", "")
 
-            # If container is waiting with CrashLoopBackOff
-            if wreason == "CrashLoopBackOff":
-                return "CrashLoopBackOff"
-
-            # If container is waiting with 'ErrImagePull' or 'ImagePullBackOff'
-            if wreason in ["ErrImagePull", "ImagePullBackOff"]:
-                return "ImagePullError"
-
-            # If container terminated with reason 'OOMKilled'
+            # OOM specifically
             if treason == "OOMKilled":
                 return "PodOOMKilled"
 
-        # 3) If no match, default to "PodFailure"
+            # If liveness probe fails repeatedly, eventually might appear as CrashLoopBackOff,
+            # but if you want to differentiate, you can do so here
+            # if wreason == "RunContainerError" or something else => ???
+
+            # CrashLoopBackOff
+            if wreason == "CrashLoopBackOff":
+                return "CrashLoopBackOff"
+
+            # Image pull
+            if wreason in ["ErrImagePull", "ImagePullBackOff"]:
+                return "ImagePullError"
+
+        # 3) If we get here, none of the checks matched
         return "PodFailure"
 
     def determine_severity(self, issue_type: str) -> str:
