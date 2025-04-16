@@ -11,13 +11,54 @@ document.addEventListener('DOMContentLoaded', function() {
   const presetSelector = document.getElementById('presetSelector');
   const analysisPanel = document.getElementById('analysisPanel');
   const filterTags = document.querySelectorAll('.filter-tag');
-  
+
+  let selectedHours = 6; // default time range
+
+  const timeRangeButton = document.getElementById('timeRangeButton');
+  const timeRangeDropdown = document.getElementById('timeRangeDropdown');
+  timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last ${selectedHours} hrs ▾`;
+
+  // Highlight default item (6 hours)
+  const defaultItem = timeRangeDropdown.querySelector(`[data-hours="${selectedHours}"]`);
+  if (defaultItem) {
+    defaultItem.classList.add('active');
+  }
+
+  if (timeRangeButton && timeRangeDropdown) {
+    timeRangeButton.addEventListener('click', () => {
+      timeRangeDropdown.style.display = (timeRangeDropdown.style.display === 'none') ? 'block' : 'none';
+    });
+
+    timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(item => {
+      item.addEventListener('click', function () {
+        // Remove active from all
+        timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('active'));
+        
+        // Set new active item
+        this.classList.add('active');
+
+        // Update selected hours and UI
+        selectedHours = parseInt(this.getAttribute('data-hours'), 10);
+        timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last ${selectedHours} hrs ▾`;
+        timeRangeDropdown.style.display = 'none';
+
+        fetchTimelineData();
+        fetchClusterIssues();
+      });
+    });
+
+    // Hide dropdown if clicked elsewhere
+    document.addEventListener('click', (event) => {
+      if (!timeRangeButton.contains(event.target) && !timeRangeDropdown.contains(event.target)) {
+        timeRangeDropdown.style.display = 'none';
+      }
+    });
+  }
+
   // Fetch timeline data from API
   function fetchTimelineData() {
     console.log('Fetching timeline data...');
-    
-    // Make an actual API call
-    fetch('/api/timeline_data?hours=6')
+    fetch(`/api/timeline_data?hours=${selectedHours}`)
       .then(response => response.json())
       .then(data => {
         timelineData = data;
@@ -97,19 +138,16 @@ document.addEventListener('DOMContentLoaded', function() {
   function updateTimelineRuler() {
     const ruler = document.querySelector('.timeline-ruler');
     ruler.innerHTML = '';
-    
-    // Create 7 time markers (6 hours divided into 1-hour segments)
-    const hours = 6;
+
     const segments = 7;
-    
     for (let i = 0; i < segments; i++) {
       const marker = document.createElement('div');
-      const time = new Date(Date.now() - (hours * 60 * 60 * 1000) + (i * hours * 60 * 60 * 1000 / (segments - 1)));
+      const time = new Date(Date.now() - (selectedHours * 60 * 60 * 1000) + (i * selectedHours * 60 * 60 * 1000 / (segments - 1)));
       marker.textContent = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       ruler.appendChild(marker);
     }
   }
-  
+
   // Apply filters to timeline data
   function applyFilters() {
     // Get active filters
@@ -222,13 +260,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  if (syncButton) {
-    syncButton.addEventListener('click', function() {
-      fetchTimelineData();
-      fetchClusterIssues();
-    });
-  }
-  
   // Initialize timeline
   fetchTimelineData();
   startAutoRefresh();

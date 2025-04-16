@@ -441,3 +441,21 @@ body {
     width: 90%;
   }
 }
+
+.dropdown-menu {
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+.dropdown-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  color: #d8d9da;
+}
+.dropdown-item:hover {
+  background-color: #2c2c35;
+}
+
+.dropdown-item.active {
+  background-color: #2c2c35;
+  font-weight: bold;
+}

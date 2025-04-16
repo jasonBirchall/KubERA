@@ -18,9 +18,19 @@
       </select>
     </div>
     <div class="top-nav-right">
-      <button class="btn" id="refreshTimelineButton">
-        <i class="fas fa-sync-alt btn-icon"></i> Last 6 hrs
-      </button>
+      <div class="btn-group">
+        <button class="btn" id="timeRangeButton">
+          <i class="fas fa-clock btn-icon"></i> Last 6 hrs ▾
+        </button>
+        <div id="timeRangeDropdown" class="dropdown-menu" style="display: none; position: absolute; background-color: #1c1c28; border: 1px solid #2c2c35; padding: 8px; z-index: 10;">
+          <div class="dropdown-item" data-hours="1">Last 1 hour</div>
+          <div class="dropdown-item" data-hours="3">Last 3 hours</div>
+          <div class="dropdown-item" data-hours="6">Last 6 hours</div>
+          <div class="dropdown-item" data-hours="12">Last 12 hours</div>
+          <div class="dropdown-item" data-hours="24">Last 24 hours</div>
+        </div>
+      </div>
+
       <button class="btn">
         <i class="fas fa-question-circle btn-icon"></i>
       </button>
