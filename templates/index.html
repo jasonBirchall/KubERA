@@ -205,72 +205,8 @@
                 <th>Latest event</th>
               </tr>
             </thead>
-            <tbody>
-              <!-- Each row calls openAnalysisPanel with the relevant issueType -->
-              <tr onclick="openAnalysisPanel('PodOOMKilled')">
-                <td><span class="badge badge-high">HIGH</span></td>
-                <td>PodOOMKilled</td>
-                <td>nicolas-multi-node-...</td>
-                <td>View 6 events</td>
-                <td>Mar 21, 25 10:42</td>
-                <td>Pod analytics-exporter-fast-76897854... OOM killed</td>
-              </tr>
-              <tr onclick="openAnalysisPanel('CrashLoopBackOff')">
-                <td><span class="badge badge-high">HIGH</span></td>
-                <td>CrashLoopBackOff</td>
-                <td>nicolas-multi-node-...</td>
-                <td>View 3 events</td>
-                <td>Mar 21, 25 11:02</td>
-                <td>Crashing pod shop-app-57b764d761...</td>
-              </tr>
-              <tr onclick="openAnalysisPanel('HighLatencyForCustomerCheckout')">
-                <td><span class="badge badge-high">HIGH</span></td>
-                <td>HighLatencyForCustomerCheckout</td>
-                <td>nicolas-multi-node-...</td>
-                <td>View 12 events</td>
-                <td>Mar 21, 25 09:35</td>
-                <td>HTTP Requests to the '/checkout' endpoint...</td>
-              </tr>
-              <tr onclick="openAnalysisPanel('KubeDeploymentReplicasMismatch')">
-                <td><span class="badge badge-medium">MEDIUM</span></td>
-                <td>KubeDeploymentReplicasMismatch</td>
-                <td>nicolas-multi-node-...</td>
-                <td>View 3 events</td>
-                <td>Mar 21, 25 12:05</td>
-                <td>Deployment has not matched the expected...</td>
-              </tr>
-              <tr onclick="openAnalysisPanel('KubePodCrashLooping')">
-                <td><span class="badge badge-medium">MEDIUM</span></td>
-                <td>KubePodCrashLooping</td>
-                <td>nicolas-multi-node-...</td>
-                <td>View 3 events</td>
-                <td>Mar 21, 25 09:32</td>
-                <td>Pod is crash looping.</td>
-              </tr>
-              <tr onclick="openAnalysisPanel('TargetDown')">
-                <td><span class="badge badge-medium">MEDIUM</span></td>
-                <td>TargetDown</td>
-                <td>nicolas-multi-node-...</td>
-                <td>View 3 events</td>
-                <td>Mar 21, 25 10:17</td>
-                <td>One or more targets are unreachable.</td>
-              </tr>
-              <tr onclick="openAnalysisPanel('MinishopHighLatency')">
-                <td><span class="badge badge-low">LOW</span></td>
-                <td>MinishopHighLatency</td>
-                <td>nicolas-multi-node-...</td>
-                <td>View 1 event</td>
-                <td>Mar 21, 25 09:10</td>
-                <td>High latency detected in Minishop application</td>
-              </tr>
-              <tr onclick="openAnalysisPanel('FailedScheduling')">
-                <td><span class="badge badge-low">LOW</span></td>
-                <td>FailedScheduling</td>
-                <td>nicolas-multi-node-...</td>
-                <td>View 2 events</td>
-                <td>Mar 21, 25 08:25</td>
-                <td>Warning for Pod deployment/default/robusta-holmes...</td>
-              </tr>
+            <tbody id="eventsTableBody">
+            <!-- We'll fill these rows dynamically -->
             </tbody>
           </table>
         </div>
@@ -291,6 +227,74 @@
 
   <!-- Scripts (inline or external) -->
   <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // After the document loads, fetch cluster issues:
+      fetch('/api/cluster_issues')
+        .then(response => response.json())
+        .then(issues => {
+          // 'issues' is an array of objects like:
+          // [
+          //   {
+          //     "name": "PodOOMKilled",
+          //     "severity": "high",
+          //     "pods": [...],
+          //     "count": 5
+          //   },
+          //   ...
+          // ]
+
+          const tableBody = document.getElementById('eventsTableBody');
+
+          // Clear anything in <tbody> (should be empty anyway)
+          tableBody.innerHTML = '';
+
+          issues.forEach(issue => {
+            // Convert severity ("high", "medium", "low") to uppercase
+            // and pick the correct 'badge' class for styling
+            const severityText = (issue.severity || '').toUpperCase();
+            let badgeClass = 'badge-low'; // default
+            if (issue.severity === 'high') {
+              badgeClass = 'badge-high';
+            } else if (issue.severity === 'medium') {
+              badgeClass = 'badge-medium';
+            }
+
+            // Find the latest timestamp from the pods
+            // so we can display something in the "Latest" column
+            let latestPod = null;
+            if (issue.pods && issue.pods.length > 0) {
+              // For a quick approach, just pick the one with the max timestamp
+              latestPod = issue.pods.reduce((acc, p) => {
+                if (!acc) return p;
+                const accTime = new Date(acc.timestamp);
+                const pTime = new Date(p.timestamp);
+                return pTime > accTime ? p : acc;
+              }, null);
+            }
+
+            // Build the row
+            // - “Cluster” is not in your JSON; you can show “demo-cluster” or
+            //   e.g. parse from your 'kind-config.yaml' name, or from the DB.
+            // - The onclick calls `openAnalysisPanel(issue.name)` just like your placeholders.
+            const row = document.createElement('tr');
+            row.setAttribute('onclick', `openAnalysisPanel('${issue.name}')`);
+            row.innerHTML = `
+              <td><span class="badge ${badgeClass}">${severityText}</span></td>
+              <td>${issue.name}</td>
+              <td>demo-cluster</td>
+              <td>View ${issue.count} events</td>
+              <td>${latestPod ? latestPod.timestamp : '-'}</td>
+              <td>${latestPod ? 'Pod ' + latestPod.name : '-'}</td>
+            `;
+
+            // Append to the table
+            tableBody.appendChild(row);
+          });
+        })
+        .catch(error => {
+          console.error('Error fetching cluster issues:', error);
+        });
+    });
     // Called when user clicks a row in the events table
     function openAnalysisPanel(issueType) {
       // Show the panel
