@@ -1,8 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 import datetime
-import json
 import random
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 
 from agent.tools.k8s_tool import K8sTool
