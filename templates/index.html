@@ -1,410 +1,379 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KubERA - Kubernetes Root Analyzer</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <meta charset="UTF-8">
+  <title>KubERA - Kubernetes Root Analyzer</title>
+  <!-- Link your custom CSS (and Font Awesome, if needed) -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <!-- Top Navigation -->
-    <div class="top-nav">
-        <div class="top-nav-left">
-            <div class="logo">Timeline</div>
-            <select class="preset-selector">
-                <option value="presets">Presets ▾</option>
-                <option value="nicolas-multi-node-kind-cluster">nicolas-multi-node-kind-cluster</option>
-            </select>
-        </div>
-        <div class="top-nav-right">
-            <button class="btn">
-                <i class="fas fa-sync-alt btn-icon"></i> Last 6 hrs
-            </button>
-            <button class="btn">
-                <i class="fas fa-question-circle btn-icon"></i>
-            </button>
-            <button class="btn">
-                <i class="fas fa-cog btn-icon"></i>
-            </button>
-            <div style="width: 24px;"></div> <!-- Spacer -->
-            <button class="btn">
-                <i class="fas fa-volume-off btn-icon"></i> Silence
-            </button>
-        </div>
+  <!-- Top Navigation -->
+  <div class="top-nav">
+    <div class="top-nav-left">
+      <div class="logo">Timeline</div>
+      <select class="preset-selector" id="presetSelector">
+        <option value="presets">Presets ▾</option>
+        <option value="nicolas-multi-node-kind-cluster">nicolas-multi-node-kind-cluster</option>
+      </select>
+    </div>
+    <div class="top-nav-right">
+      <button class="btn">
+        <i class="fas fa-sync-alt btn-icon"></i> Last 6 hrs
+      </button>
+      <button class="btn">
+        <i class="fas fa-question-circle btn-icon"></i>
+      </button>
+      <button class="btn">
+        <i class="fas fa-cog btn-icon"></i>
+      </button>
+      <div style="width: 24px;"></div> <!-- Spacer -->
+      <button class="btn">
+        <i class="fas fa-volume-off btn-icon"></i> Silence
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <div class="main-container">
+    <!-- Left Sidebar -->
+    <div class="side-nav">
+      <div class="side-nav-item">
+        <i class="fas fa-tachometer-alt"></i>
+      </div>
+      <div class="side-nav-item">
+        <i class="fas fa-chart-line"></i>
+      </div>
+      <div class="side-nav-item">
+        <i class="fas fa-th-large"></i>
+      </div>
+      <div class="side-nav-item">
+        <i class="fas fa-bell"></i>
+      </div>
     </div>
 
-    <!-- Main Container -->
-    <div class="main-container">
-        <!-- Left Sidebar -->
-        <div class="side-nav">
-            <div class="side-nav-item">
-                <i class="fas fa-tachometer-alt"></i>
-            </div>
-            <div class="side-nav-item">
-                <i class="fas fa-chart-line"></i>
-            </div>
-            <div class="side-nav-item">
-                <i class="fas fa-th-large"></i>
-            </div>
-            <div class="side-nav-item">
-                <i class="fas fa-bell"></i>
-            </div>
+    <!-- Filters Panel -->
+    <div class="filter-panel">
+      <!-- Filter sections -->
+      <div class="filter-section">
+        <div class="filter-title">Filters</div>
+        <input type="text" class="filter-input" placeholder="Type / to search">
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-title">App</div>
+        <div class="filter-tags">
+          <div class="filter-tag active">All</div>
+          <div class="filter-tag">APP</div>
         </div>
+      </div>
 
-        <!-- Filters Panel -->
-        <div class="filter-panel">
-            <!-- Filter sections -->
-            <div class="filter-section">
-                <div class="filter-title">Filters</div>
-                <input type="text" class="filter-input" placeholder="Type / to search">
-            </div>
-
-            <div class="filter-section">
-                <div class="filter-title">App</div>
-                <div class="filter-tags">
-                    <div class="filter-tag active">All</div>
-                    <div class="filter-tag">APP</div>
-                </div>
-            </div>
-
-            <div class="filter-section">
-                <div class="filter-title">Alert</div>
-                <div class="filter-tags">
-                    <div class="filter-tag active">All</div>
-                    <div class="filter-tag">High</div>
-                    <div class="filter-tag">Medium</div>
-                    <div class="filter-tag">Low</div>
-                </div>
-            </div>
-
-            <div class="filter-section">
-                <div class="filter-title">Priority</div>
-                <div class="filter-tags">
-                    <div class="filter-tag active">All</div>
-                    <div class="filter-tag">High</div>
-                    <div class="filter-tag">Medium</div>
-                    <div class="filter-tag">Low</div>
-                </div>
-            </div>
-
-            <div class="filter-section">
-                <div class="filter-title">Source</div>
-                <div class="filter-tags">
-                    <div class="filter-tag active">All</div>
-                    <div class="filter-tag">Source</div>
-                </div>
-            </div>
-
-            <div class="filter-section">
-                <div class="filter-title">More filters</div>
-                <div class="filter-tags">
-                    <div class="filter-tag">Add filter</div>
-                </div>
-            </div>
+      <div class="filter-section">
+        <div class="filter-title">Alert</div>
+        <div class="filter-tags">
+          <div class="filter-tag active">All</div>
+          <div class="filter-tag">High</div>
+          <div class="filter-tag">Medium</div>
+          <div class="filter-tag">Low</div>
         </div>
+      </div>
 
-        <!-- Main Content Area -->
-        <div class="content-area">
-            <!-- Timeline Header Controls -->
-            <div class="timeline-header">
-                <div class="timeline-controls">
-                    <div style="display: flex; align-items: center; gap: 4px; margin-right: 12px;">
-                        <input type="checkbox" id="timeline-group">
-                        <label for="timeline-group">Group by |</label>
-                    </div>
-                    <div class="btn">Alert <i class="fas fa-caret-down"></i></div>
-                    <div class="btn btn-primary">
-                        <i class="fas fa-chart-line btn-icon"></i> Trend Analysis
-                    </div>
-                </div>
-            </div>
-
-            <!-- Timeline View -->
-            <div class="timeline-view">
-                <!-- Time Ruler -->
-                <div class="timeline-ruler">
-                    <div>Mar 21 07:10</div>
-                    <div>Mar 21 08:02</div>
-                    <div>Mar 21 08:54</div>
-                    <div>Mar 21 09:46</div>
-                    <div>Mar 21 10:38</div>
-                    <div>Mar 21 11:30</div>
-                    <div>Mar 21 12:22</div>
-                </div>
-
-                <!-- Timeline Tracks -->
-                <div class="timeline-tracks">
-                    <!-- Track 1 -->
-                    <div class="timeline-track">
-                        <div class="timeline-track-title">HighLatencyForCustomerCheckout (12)</div>
-                        <div class="timeline-event high" style="left: 10%; width: 3%;"></div>
-                        <div class="timeline-event high" style="left: 65%; width: 2%;"></div>
-                    </div>
-
-                    <!-- Track 2 -->
-                    <div class="timeline-track">
-                        <div class="timeline-track-title">KubeDeploymentReplicasMismatch (3)</div>
-                        <div class="timeline-event medium" style="left: 30%; width: 2%;"></div>
-                    </div>
-
-                    <!-- Track 3 -->
-                    <div class="timeline-track">
-                        <div class="timeline-track-title">KubePodCrashLooping (2)</div>
-                        <div class="timeline-event high" style="left: 25%; width: 1%;"></div>
-                    </div>
-
-                    <!-- Track 4 -->
-                    <div class="timeline-track">
-                        <div class="timeline-track-title">TargetDown (1)</div>
-                        <div class="timeline-event low" style="left: 40%; width: 1%;"></div>
-                    </div>
-
-                    <!-- Track 5 -->
-                    <div class="timeline-track">
-                        <div class="timeline-track-title">MinishopHighLatency (1)</div>
-                        <div class="timeline-event high" style="left: 50%; width: 1%;"></div>
-                    </div>
-
-                    <!-- Track 6 -->
-                    <div class="timeline-track">
-                        <div class="timeline-track-title">PodOOMKilled (5)</div>
-                        <div class="timeline-event high" style="left: 15%; width: 1%;"></div>
-                        <div class="timeline-event high" style="left: 35%; width: 1%;"></div>
-                        <div class="timeline-event high" style="left: 55%; width: 1%;"></div>
-                        <div class="timeline-event high" style="left: 75%; width: 1%;"></div>
-                        <div class="timeline-event high" style="left: 95%; width: 1%;"></div>
-                    </div>
-
-                    <!-- Track 7 -->
-                    <div class="timeline-track">
-                        <div class="timeline-track-title">CrashLoopBackOff (3)</div>
-                        <div class="timeline-event medium" style="left: 60%; width: 5%;"></div>
-                    </div>
-
-                    <!-- Track 8 -->
-                    <div class="timeline-track">
-                        <div class="timeline-track-title">SchedulingWarning (2)</div>
-                        <div class="timeline-event low" style="left: 45%; width: 2%;"></div>
-                    </div>
-                </div>
-
-                <!-- Events Section -->
-                <div class="events-section">
-                    <div class="events-header">
-                        <h3 class="events-title">Events</h3>
-                    </div>
-
-                    <div class="events-tabs">
-                        <button class="event-tab active">Grouped Events (8)</button>
-                        <button class="event-tab">Event Stream (53)</button>
-                    </div>
-
-                    <!-- Events Table -->
-                    <table class="events-table">
-                        <thead>
-                            <tr>
-                                <th>Priority</th>
-                                <th>Alert</th>
-                                <th>Cluster</th>
-                                <th>Events</th>
-                                <th>Latest</th>
-                                <th>Latest event</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <!-- Event Row 1 -->
-                            <tr onclick="openAnalysisPanel('PodOOMKilled')">
-                                <td><span class="badge badge-high">HIGH</span></td>
-                                <td>PodOOMKilled</td>
-                                <td>nicolas-multi-node-...</td>
-                                <td>View 6 events</td>
-                                <td>Mar 21, 25 10:42</td>
-                                <td>Pod analytics-exporter-fast-76897854... OOM killed</td>
-                            </tr>
-                            
-                            <!-- Event Row 2 -->
-                            <tr onclick="openAnalysisPanel('CrashLoopBackOff')">
-                                <td><span class="badge badge-high">HIGH</span></td>
-                                <td>CrashLoopBackOff</td>
-                                <td>nicolas-multi-node-...</td>
-                                <td>View 3 events</td>
-                                <td>Mar 21, 25 11:02</td>
-                                <td>Crashing pod shop-app-57b764d761...</td>
-                            </tr>
-                            
-                            <!-- Event Row 3 -->
-                            <tr onclick="openAnalysisPanel('HighLatencyForCustomerCheckout')">
-                                <td><span class="badge badge-high">HIGH</span></td>
-                                <td>HighLatencyForCustomerCheckout</td>
-                                <td>nicolas-multi-node-...</td>
-                                <td>View 12 events</td>
-                                <td>Mar 21, 25 09:35</td>
-                                <td>HTTP Requests to the '/checkout' endpoint...</td>
-                            </tr>
-                            
-                            <!-- Event Row 4 -->
-                            <tr onclick="openAnalysisPanel('KubeDeploymentReplicasMismatch')">
-                                <td><span class="badge badge-medium">MEDIUM</span></td>
-                                <td>KubeDeploymentReplicasMismatch</td>
-                                <td>nicolas-multi-node-...</td>
-                                <td>View 3 events</td>
-                                <td>Mar 21, 25 12:05</td>
-                                <td>Deployment has not matched the expected...</td>
-                            </tr>
-                            
-                            <!-- Event Row 5 -->
-                            <tr onclick="openAnalysisPanel('KubePodCrashLooping')">
-                                <td><span class="badge badge-medium">MEDIUM</span></td>
-                                <td>KubePodCrashLooping</td>
-                                <td>nicolas-multi-node-...</td>
-                                <td>View 3 events</td>
-                                <td>Mar 21, 25 09:32</td>
-                                <td>Pod is crash looping.</td>
-                            </tr>
-                            
-                            <!-- Event Row 6 -->
-                            <tr onclick="openAnalysisPanel('TargetDown')">
-                                <td><span class="badge badge-medium">MEDIUM</span></td>
-                                <td>TargetDown</td>
-                                <td>nicolas-multi-node-...</td>
-                                <td>View 3 events</td>
-                                <td>Mar 21, 25 10:17</td>
-                                <td>One or more targets are unreachable.</td>
-                            </tr>
-                            
-                            <!-- Event Row 7 -->
-                            <tr onclick="openAnalysisPanel('MinishopHighLatency')">
-                                <td><span class="badge badge-low">LOW</span></td>
-                                <td>MinishopHighLatency</td>
-                                <td>nicolas-multi-node-...</td>
-                                <td>View 1 event</td>
-                                <td>Mar 21, 25 09:10</td>
-                                <td>High latency detected in Minishop application</td>
-                            </tr>
-                            
-                            <!-- Event Row 8 -->
-                            <tr onclick="openAnalysisPanel('FailedScheduling')">
-                                <td><span class="badge badge-low">LOW</span></td>
-                                <td>FailedScheduling</td>
-                                <td>nicolas-multi-node-...</td>
-                                <td>View 2 events</td>
-                                <td>Mar 21, 25 08:25</td>
-                                <td>Warning for Pod deployment/default/robusta-holmes...</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+      <div class="filter-section">
+        <div class="filter-title">Priority</div>
+        <div class="filter-tags">
+          <div class="filter-tag active">All</div>
+          <div class="filter-tag">High</div>
+          <div class="filter-tag">Medium</div>
+          <div class="filter-tag">Low</div>
         </div>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-title">Source</div>
+        <div class="filter-tags">
+          <div class="filter-tag active">All</div>
+          <div class="filter-tag">Source</div>
+        </div>
+      </div>
+
+      <div class="filter-section">
+        <div class="filter-title">More filters</div>
+        <div class="filter-tags">
+          <div class="filter-tag">Add filter</div>
+        </div>
+      </div>
     </div>
 
-    <!-- Analysis Panel (hidden by default) -->
-    <div id="analysisPanel" class="analysis-panel">
-        <div class="analysis-header">
-            <div class="analysis-title">Investigating alert MinishopHighLatency</div>
-            <button class="analysis-close" onclick="closeAnalysisPanel()">×</button>
+    <!-- Main Content Area -->
+    <div class="content-area">
+      <!-- Timeline Header Controls -->
+      <div class="timeline-header">
+        <div class="timeline-controls">
+          <div style="display: flex; align-items: center; gap: 4px; margin-right: 12px;">
+            <input type="checkbox" id="timeline-group">
+            <label for="timeline-group">Group by |</label>
+          </div>
+          <div class="btn">Alert <i class="fas fa-caret-down"></i></div>
+          <div class="btn btn-primary">
+            <i class="fas fa-chart-line btn-icon"></i> Trend Analysis
+          </div>
         </div>
-        <div class="analysis-content">
-            <!-- Root Cause Section -->
-            <div class="analysis-section">
-                <div class="section-title">Root Cause <span style="color: #7e7e8f;">*</span></div>
-                <ol class="root-cause-list">
-                    <li>Query Performance: The latency is likely due to inefficient database queries. Consider adding indexes or rewriting the query for better performance.</li>
-                    <li>Database Performance: Check the database server's performance metrics to ensure it is not overloaded or experiencing resource constraints.</li>
-                    <li>Scale Resources: If the database is under heavy load, consider scaling the resources allocated to it or distributing the load more effectively.</li>
-                    <li>Monitor and Profile: Use database profiling tools to monitor query performance and identify any other slow queries that may need optimization.</li>
-                </ol>
-            </div>
+      </div>
 
-            <!-- Runbooks Section -->
-            <div class="analysis-section">
-                <div class="section-title">Runbooks</div>
-                <div>
-                    <p>Follow these steps to address the high latency issue:</p>
-                    <ol class="root-cause-list">
-                        <li>Check the database's performance metrics</li>
-                        <li>Analyze slow query logs</li>
-                        <li>Optimize the identified problematic queries</li>
-                        <li>Consider adding appropriate indexes</li>
-                        <li>Monitor the system after changes to verify improvement</li>
-                    </ol>
-                </div>
-            </div>
-
-            <!-- Related Logs Section -->
-            <div class="analysis-section">
-                <div class="section-title">Related Logs</div>
-                <div class="logs-container">
-                    <div class="log-line"><span class="log-timestamp">2025-03-21T11:52:582</span> {"level":30,"time":1742557978538,"pid":1,"hostname":"fraud-service-5f8b576878-s1npb"}</div>
-                    <div class="log-line"><span class="log-timestamp">2025-03-21T11:52:582</span> {"level":30,"time":1742557984937,"pid":1,"hostname":"fraud-service-5f8b576878-s1npb"}</div>
-                    <div class="log-line"><span class="log-timestamp">2025-03-21T11:52:582</span> {"level":30,"time":1742557978537,"pid":1,"hostname":"checkout-service-66cb4b6c4b-77ch1"}</div>
-                    <div class="log-line"><span class="log-timestamp">2025-03-21T11:53:852</span> {"level":30,"time":1742557985516,"pid":1,"hostname":"checkout-service-66cb4b6c4b-77ch1"}</div>
-                </div>
-            </div>
-
-            <!-- Tools Section -->
-            <div class="analysis-section">
-                <div class="section-title">Gathered data with 5 tools</div>
-                <ul class="tools-list">
-                    <li>Fetch metadata and history</li>
-                    <li>Fetched Tempo traces with min_duration=4s (('min_duration': '4s', 'deployment_name': 'minishop', 'namespace_name': 'default'))</li>
-                    <li>Fetched Tempo trace with trace_id=e342e3a277a3c543603c09e9157a8205 ((trace_id: 'e342e3a277a3c543603c09e9157a8205'))</li>
-                    <li>Fetched Loki logs((resource_type: 'pod', 'resource_name': 'fraud-service-5f8b576878-s1npb', 'namespace': 'minishop'))</li>
-                    <li>Fetched Loki logs((resource_type: 'pod', 'resource_name': 'checkout-service-66cb4b6c4b-77ch1', 'namespace': 'minishop'))</li>
-                </ul>
-            </div>
-
-            <!-- Ask a follow-up -->
-            <div class="analysis-section">
-                <button class="btn">Ask a follow-up</button>
-            </div>
+      <!-- Timeline View -->
+      <div class="timeline-view">
+        <!-- Time Ruler -->
+        <div class="timeline-ruler">
+          <div>Mar 21 07:10</div>
+          <div>Mar 21 08:02</div>
+          <div>Mar 21 08:54</div>
+          <div>Mar 21 09:46</div>
+          <div>Mar 21 10:38</div>
+          <div>Mar 21 11:30</div>
+          <div>Mar 21 12:22</div>
         </div>
+
+        <!-- Timeline Tracks -->
+        <div class="timeline-tracks">
+          <!-- Just an example of static tracks. In a real setup, you'd build these from /api/cluster_issues. -->
+          <div class="timeline-track">
+            <div class="timeline-track-title">HighLatencyForCustomerCheckout (12)</div>
+            <div class="timeline-event high" style="left: 10%; width: 3%;"></div>
+            <div class="timeline-event high" style="left: 65%; width: 2%;"></div>
+          </div>
+
+          <div class="timeline-track">
+            <div class="timeline-track-title">KubeDeploymentReplicasMismatch (3)</div>
+            <div class="timeline-event medium" style="left: 30%; width: 2%;"></div>
+          </div>
+
+          <div class="timeline-track">
+            <div class="timeline-track-title">KubePodCrashLooping (2)</div>
+            <div class="timeline-event high" style="left: 25%; width: 1%;"></div>
+          </div>
+
+          <div class="timeline-track">
+            <div class="timeline-track-title">TargetDown (1)</div>
+            <div class="timeline-event low" style="left: 40%; width: 1%;"></div>
+          </div>
+
+          <div class="timeline-track">
+            <div class="timeline-track-title">MinishopHighLatency (1)</div>
+            <div class="timeline-event high" style="left: 50%; width: 1%;"></div>
+          </div>
+
+          <div class="timeline-track">
+            <div class="timeline-track-title">PodOOMKilled (5)</div>
+            <div class="timeline-event high" style="left: 15%; width: 1%;"></div>
+            <div class="timeline-event high" style="left: 35%; width: 1%;"></div>
+            <div class="timeline-event high" style="left: 55%; width: 1%;"></div>
+            <div class="timeline-event high" style="left: 75%; width: 1%;"></div>
+            <div class="timeline-event high" style="left: 95%; width: 1%;"></div>
+          </div>
+
+          <div class="timeline-track">
+            <div class="timeline-track-title">CrashLoopBackOff (3)</div>
+            <div class="timeline-event medium" style="left: 60%; width: 5%;"></div>
+          </div>
+
+          <div class="timeline-track">
+            <div class="timeline-track-title">SchedulingWarning (2)</div>
+            <div class="timeline-event low" style="left: 45%; width: 2%;"></div>
+          </div>
+        </div>
+
+        <!-- Events Section -->
+        <div class="events-section">
+          <div class="events-header">
+            <h3 class="events-title">Events</h3>
+          </div>
+
+          <div class="events-tabs">
+            <button class="event-tab active">Grouped Events (8)</button>
+            <button class="event-tab">Event Stream (53)</button>
+          </div>
+
+          <!-- Example events table with onClick calls to openAnalysisPanel() -->
+          <table class="events-table">
+            <thead>
+              <tr>
+                <th>Priority</th>
+                <th>Alert</th>
+                <th>Cluster</th>
+                <th>Events</th>
+                <th>Latest</th>
+                <th>Latest event</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Each row calls openAnalysisPanel with the relevant issueType -->
+              <tr onclick="openAnalysisPanel('PodOOMKilled')">
+                <td><span class="badge badge-high">HIGH</span></td>
+                <td>PodOOMKilled</td>
+                <td>nicolas-multi-node-...</td>
+                <td>View 6 events</td>
+                <td>Mar 21, 25 10:42</td>
+                <td>Pod analytics-exporter-fast-76897854... OOM killed</td>
+              </tr>
+              <tr onclick="openAnalysisPanel('CrashLoopBackOff')">
+                <td><span class="badge badge-high">HIGH</span></td>
+                <td>CrashLoopBackOff</td>
+                <td>nicolas-multi-node-...</td>
+                <td>View 3 events</td>
+                <td>Mar 21, 25 11:02</td>
+                <td>Crashing pod shop-app-57b764d761...</td>
+              </tr>
+              <tr onclick="openAnalysisPanel('HighLatencyForCustomerCheckout')">
+                <td><span class="badge badge-high">HIGH</span></td>
+                <td>HighLatencyForCustomerCheckout</td>
+                <td>nicolas-multi-node-...</td>
+                <td>View 12 events</td>
+                <td>Mar 21, 25 09:35</td>
+                <td>HTTP Requests to the '/checkout' endpoint...</td>
+              </tr>
+              <tr onclick="openAnalysisPanel('KubeDeploymentReplicasMismatch')">
+                <td><span class="badge badge-medium">MEDIUM</span></td>
+                <td>KubeDeploymentReplicasMismatch</td>
+                <td>nicolas-multi-node-...</td>
+                <td>View 3 events</td>
+                <td>Mar 21, 25 12:05</td>
+                <td>Deployment has not matched the expected...</td>
+              </tr>
+              <tr onclick="openAnalysisPanel('KubePodCrashLooping')">
+                <td><span class="badge badge-medium">MEDIUM</span></td>
+                <td>KubePodCrashLooping</td>
+                <td>nicolas-multi-node-...</td>
+                <td>View 3 events</td>
+                <td>Mar 21, 25 09:32</td>
+                <td>Pod is crash looping.</td>
+              </tr>
+              <tr onclick="openAnalysisPanel('TargetDown')">
+                <td><span class="badge badge-medium">MEDIUM</span></td>
+                <td>TargetDown</td>
+                <td>nicolas-multi-node-...</td>
+                <td>View 3 events</td>
+                <td>Mar 21, 25 10:17</td>
+                <td>One or more targets are unreachable.</td>
+              </tr>
+              <tr onclick="openAnalysisPanel('MinishopHighLatency')">
+                <td><span class="badge badge-low">LOW</span></td>
+                <td>MinishopHighLatency</td>
+                <td>nicolas-multi-node-...</td>
+                <td>View 1 event</td>
+                <td>Mar 21, 25 09:10</td>
+                <td>High latency detected in Minishop application</td>
+              </tr>
+              <tr onclick="openAnalysisPanel('FailedScheduling')">
+                <td><span class="badge badge-low">LOW</span></td>
+                <td>FailedScheduling</td>
+                <td>nicolas-multi-node-...</td>
+                <td>View 2 events</td>
+                <td>Mar 21, 25 08:25</td>
+                <td>Warning for Pod deployment/default/robusta-holmes...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
+  </div>
 
-    <!-- JavaScript for interactivity -->
-    <script>
-        // Open analysis panel
-        function openAnalysisPanel(alertType) {
-            const panel = document.getElementById('analysisPanel');
-            const title = document.querySelector('.analysis-title');
-            title.textContent = 'Investigating alert ' + alertType;
-            panel.classList.add('open');
-            
-            // In a real implementation, you would fetch the analysis data
-            // from your existing LLM agent here
-        }
-        
-        // Close analysis panel
-        function closeAnalysisPanel() {
-            const panel = document.getElementById('analysisPanel');
-            panel.classList.remove('open');
-        }
+  <!-- Analysis Panel (hidden by default) -->
+  <div id="analysisPanel" class="analysis-panel">
+    <div class="analysis-header">
+      <div class="analysis-title">Investigating alert ???</div>
+      <button class="analysis-close" onclick="closeAnalysisPanel()">×</button>
+    </div>
+    <div class="analysis-content">
+      <!-- This gets replaced via JS when user clicks on a row -->
+    </div>
+  </div>
 
-        // Add click events to filter tags
-        document.addEventListener('DOMContentLoaded', function() {
-            // Set up filter tag clicks
-            const filterTags = document.querySelectorAll('.filter-tag');
-            filterTags.forEach(tag => {
-                tag.addEventListener('click', function() {
-                    // Remove active class from siblings
-                    const siblings = Array.from(this.parentNode.children);
-                    siblings.forEach(sibling => {
-                        sibling.classList.remove('active');
-                    });
-                    
-                    // Add active class to clicked tag
-                    this.classList.add('active');
-                });
-            });
+  <!-- Scripts (inline or external) -->
+  <script>
+    // Called when user clicks a row in the events table
+    function openAnalysisPanel(issueType) {
+      // Show the panel
+      const panel = document.getElementById('analysisPanel');
+      const titleEl = document.querySelector('.analysis-title');
+      const contentEl = document.querySelector('.analysis-content');
 
-            // Set up events tab clicks
-            const eventTabs = document.querySelectorAll('.event-tab');
-            eventTabs.forEach(tab => {
-                tab.addEventListener('click', function() {
-                    eventTabs.forEach(t => t.classList.remove('active'));
-                    this.classList.add('active');
-                });
-            });
+      // Set placeholder text
+      titleEl.textContent = "Investigating alert " + issueType;
+      contentEl.innerHTML = "<p>Loading analysis...</p>";
+      panel.classList.add('open');
+
+      // Make the request to your backend /api/analyze/<issueType>
+      fetch(`/api/analyze/${issueType}`)
+        .then(response => response.json())
+        .then(data => {
+          /* Expected response shape:
+             {
+               "issue_type": "PodOOMKilled",
+               "analysis": [
+                 {
+                   "pod_name": "my-pod-abc",
+                   "root_cause": [...],
+                   "recommended_actions": [...],
+                   "pod_events": [...],
+                   "logs_excerpt": [...],
+                   ...
+                 },
+                 { ... } // more pods
+               ]
+             }
+          */
+          if (!data.analysis || data.analysis.length === 0) {
+            contentEl.innerHTML = `<p>No pods found for: ${issueType}</p>`;
+            return;
+          }
+
+          // Build HTML for each failing pod
+          const itemsHTML = data.analysis.map(item => {
+            const podName = item.pod_name;
+            const rootCause = item.root_cause || [];
+            const recActions = item.recommended_actions || [];
+            const events = item.pod_events || [];
+            const logs = item.logs_excerpt || [];
+
+            // turn each array into bullet points
+            const rootCauseHTML = rootCause.map(rc => `<li>${rc}</li>`).join('');
+            const recActionsHTML = recActions.map(r => `<li>${r}</li>`).join('');
+            const eventsHTML = events.map(e => `<li>${e}</li>`).join('');
+            const logsHTML = logs.map(line => `<div class="log-line">${line}</div>`).join('');
+
+            return `
+              <div style="margin-bottom:24px;">
+                <h3>Pod: ${podName}</h3>
+                <h4>Root Cause</h4>
+                <ul>${rootCauseHTML}</ul>
+
+                <h4>Recommended Actions</h4>
+                <ul>${recActionsHTML}</ul>
+
+                <h4>Pod Events</h4>
+                <ul>${eventsHTML}</ul>
+
+                <h4>Logs (excerpt)</h4>
+                <div style="background:#111; padding:12px; max-height:150px; overflow-y:auto;">
+                  ${logsHTML}
+                </div>
+              </div>
+            `;
+          }).join('');
+
+          contentEl.innerHTML = itemsHTML;
+        })
+        .catch(error => {
+          console.error("Error fetching analysis:", error);
+          contentEl.innerHTML = `<p style="color:red;">Failed to load analysis: ${error}</p>`;
         });
-    </script>
+    }
+
+    function closeAnalysisPanel() {
+      const panel = document.getElementById('analysisPanel');
+      panel.classList.remove('open');
+    }
+  </script>
+</body>
+</html>
