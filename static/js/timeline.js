@@ -214,7 +214,14 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   // Add sync button handler
-  const syncButton = document.querySelector('.fa-sync-alt')?.closest('.btn');
+  const refreshTimelineButton = document.getElementById('refreshTimelineButton');
+  if (refreshTimelineButton) {
+    refreshTimelineButton.addEventListener('click', function () {
+      fetchTimelineData();
+      fetchClusterIssues();
+    });
+  }
+
   if (syncButton) {
     syncButton.addEventListener('click', function() {
       fetchTimelineData();
