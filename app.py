@@ -59,6 +59,44 @@ def determine_severity(issue_type):
 def index():
     return render_template('index.html')
 
+@app.route('/api/timeline_data')
+def get_timeline_data():
+    """
+    Return structured timeline data for K8s issues over time.
+    This is separate from the cluster_issues endpoint.
+    """
+    # Get the time range from query parameters, default to 6 hours
+    hours = request.args.get('hours', 6, type=int)
+    
+    namespace = request.args.get('namespace', 'default')
+    broken_pods = k8s_tool.list_broken_pods(namespace=namespace)
+    issue_groups = {}
+    app.logger.debug(f"[DEBUG] Broken pods = {broken_pods}")
+
+    for pod_name in broken_pods:
+        metadata = k8s_tool.gather_metadata(namespace, pod_name)
+        issue_type = k8s_tool.determine_issue_type(metadata)
+        severity = k8s_tool.determine_severity(issue_type)
+
+        if issue_type not in issue_groups:
+            issue_groups[issue_type] = {
+                "name": issue_type,
+                "severity": severity,
+                "pods": [],
+                "count": 0,
+                "timeline_position": random.randint(10, 90)  # Random position for demo
+            }
+
+        issue_groups[issue_type]["pods"].append({
+            "name": pod_name,
+            "namespace": namespace,
+            "timestamp": datetime.now().isoformat()
+        })
+        issue_groups[issue_type]["count"] += 1
+
+    app.logger.debug(f"[DEBUG] Timeline data = {issue_groups}")
+    return jsonify(list(issue_groups.values()))
+
 @app.route('/api/cluster_issues')
 def get_cluster_issues():
     namespace = "default"

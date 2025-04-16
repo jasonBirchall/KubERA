@@ -8,7 +8,18 @@ console = Console()
 
 class K8sTool:
     """Tool for interacting with Kubernetes cluster via kubectl."""
-    
+
+    def get_namespaces(self):
+        """Get all available namespaces in the cluster"""
+        try:
+            output = subprocess.check_output("kubectl get namespaces -o=jsonpath='{.items[*].metadata.name}'", 
+                                            shell=True, stderr=subprocess.STDOUT)
+            namespaces = output.decode().split()
+            return namespaces
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error getting namespaces: {e.output.decode()}")
+            return ["default"]  # Fallback to default namespace
+
     def list_broken_pods(self, namespace="default"):
         """
         Return a list of pod names in the given namespace that appear to be failing 

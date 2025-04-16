@@ -14,39 +14,154 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Fetch timeline data from API
   function fetchTimelineData() {
-    // In a real implementation, this would be an actual API call
-    // For now, we'll simulate it
     console.log('Fetching timeline data...');
     
-    // Simulated API response delay
-    setTimeout(() => {
-      // We're using the hard-coded data from the HTML for now
-      // In reality, this would come from your Flask backend
-      processTimelineData();
-    }, 500);
+    // Make an actual API call
+    fetch('/api/timeline_data?hours=6')
+      .then(response => response.json())
+      .then(data => {
+        timelineData = data;
+        console.log('Timeline data received:', timelineData);
+        renderTimelineTracks(timelineData);
+        updateTimelineRuler();
+        processTimelineData();
+      })
+      .catch(error => {
+        console.error('Error fetching timeline data:', error);
+      });
   }
   
   // Process timeline data
   function processTimelineData() {
-    // For now, we'll just use the timeline tracks that are already in the HTML
     console.log('Processing timeline data...');
     
     // Apply any active filters
     applyFilters();
   }
+
+  // Render timeline tracks
+  function renderTimelineTracks(issues) {
+    const tracksContainer = document.querySelector('.timeline-tracks');
+    tracksContainer.innerHTML = ''; // Clear existing tracks
+    
+    if (!issues || issues.length === 0) {
+      tracksContainer.innerHTML = '<div style="padding: 15px; color: #7e7e8f;">No issues detected in the cluster</div>';
+      return;
+    }
+    
+    // Create a track for each issue type
+    issues.forEach(issue => {
+      const track = document.createElement('div');
+      track.className = 'timeline-track';
+      
+      // Add the track title with count
+      const title = document.createElement('div');
+      title.className = 'timeline-track-title';
+      title.textContent = `${issue.name} (${issue.count})`;
+      track.appendChild(title);
+      
+      // Add events for each pod or use a predefined position
+      if (issue.pods && issue.pods.length > 0) {
+        issue.pods.forEach(pod => {
+          // Create event marker
+          const event = document.createElement('div');
+          event.className = `timeline-event ${issue.severity || 'low'}`;
+          
+          // Calculate position based on timestamp or use the provided position
+          const eventTime = new Date(pod.timestamp);
+          let positionPercent = issue.timeline_position || 50; // Default to middle if no position
+          
+          // Set position and width
+          event.style.left = `${positionPercent}%`;
+          event.style.width = '1%'; // Small fixed width
+          
+          // Add tooltip with pod info
+          event.title = `Pod: ${pod.name}\nNamespace: ${pod.namespace}\nTime: ${new Date(pod.timestamp).toLocaleString()}`;
+          
+          track.appendChild(event);
+        });
+      } else if (issue.timeline_position) {
+        // If no pods but we have a position, show a single event
+        const event = document.createElement('div');
+        event.className = `timeline-event ${issue.severity || 'low'}`;
+        event.style.left = `${issue.timeline_position}%`;
+        event.style.width = '1%';
+        track.appendChild(event);
+      }
+      
+      tracksContainer.appendChild(track);
+    });
+  }
+
+  // Update timeline ruler with accurate time markers
+  function updateTimelineRuler() {
+    const ruler = document.querySelector('.timeline-ruler');
+    ruler.innerHTML = '';
+    
+    // Create 7 time markers (6 hours divided into 1-hour segments)
+    const hours = 6;
+    const segments = 7;
+    
+    for (let i = 0; i < segments; i++) {
+      const marker = document.createElement('div');
+      const time = new Date(Date.now() - (hours * 60 * 60 * 1000) + (i * hours * 60 * 60 * 1000 / (segments - 1)));
+      marker.textContent = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      ruler.appendChild(marker);
+    }
+  }
   
   // Apply filters to timeline data
   function applyFilters() {
     // Get active filters
-    const activeApp = document.querySelector('.filter-section:nth-child(2) .filter-tag.active').textContent;
-    const activeAlert = document.querySelector('.filter-section:nth-child(3) .filter-tag.active').textContent;
-    const activePriority = document.querySelector('.filter-section:nth-child(4) .filter-tag.active').textContent;
-    const activeSource = document.querySelector('.filter-section:nth-child(5) .filter-tag.active').textContent;
+    const activeApp = document.querySelector('.filter-section:nth-child(2) .filter-tag.active')?.textContent;
+    const activeAlert = document.querySelector('.filter-section:nth-child(3) .filter-tag.active')?.textContent;
+    const activePriority = document.querySelector('.filter-section:nth-child(4) .filter-tag.active')?.textContent;
+    const activeSource = document.querySelector('.filter-section:nth-child(5) .filter-tag.active')?.textContent;
     
     console.log('Active filters:', { activeApp, activeAlert, activePriority, activeSource });
     
-    // In a real implementation, you would filter the timeline data based on these values
-    // For now, we're just logging them
+    // Filter the timeline data
+    filteredData = timelineData.filter(item => {
+      // If namespace filter is not "All", filter by namespace
+      if (activeApp && activeApp !== "All") {
+        // Check if any pod in this item is in the selected namespace
+        const podsInNamespace = item.pods?.filter(pod => pod.namespace === activeApp);
+        if (!podsInNamespace || podsInNamespace.length === 0) {
+          return false;
+        }
+      }
+      
+      // Filter by priority/severity if not "All"
+      if (activePriority && activePriority !== "All") {
+        const priority = activePriority.toLowerCase();
+        if (item.severity !== priority) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+    
+    // Render filtered data
+    renderTimelineTracks(filteredData);
+    
+    // Update the events table to match
+    fetchClusterIssues();
+  }
+  
+  // Auto-refresh functionality
+  let refreshInterval;
+
+  function startAutoRefresh(intervalSeconds = 30) {
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+    }
+    
+    refreshInterval = setInterval(() => {
+      fetchTimelineData();
+      fetchClusterIssues();
+      console.log('Auto-refreshed data');
+    }, intervalSeconds * 1000);
   }
   
   // Handle filter tag clicks
@@ -82,6 +197,7 @@ document.addEventListener('DOMContentLoaded', function() {
         case 'recent':
           // Adjust time range to last hour
           timeRange.start = new Date(Date.now() - 60 * 60 * 1000); // 1 hour ago
+          updateTimelineRuler();
           break;
         case 'all':
         default:
@@ -91,32 +207,22 @@ document.addEventListener('DOMContentLoaded', function() {
           });
           // Reset time range
           timeRange.start = new Date(Date.now() - 6 * 60 * 60 * 1000); // 6 hours ago
+          updateTimelineRuler();
           break;
       }
     });
   }
   
-  // Event handlers for analysis panel
-  window.openAnalysisPanel = function(alertType) {
-    const title = document.getElementById('analysisTitle');
-    if (title) {
-      title.textContent = 'Investigating alert ' + alertType;
-    }
-    
-    // In a real implementation, you would fetch the analysis data for this alert
-    // For now, we'll just open the panel with the static content
-    
-    if (analysisPanel) {
-      analysisPanel.classList.add('open');
-    }
-  };
-  
-  window.closeAnalysisPanel = function() {
-    if (analysisPanel) {
-      analysisPanel.classList.remove('open');
-    }
-  };
+  // Add sync button handler
+  const syncButton = document.querySelector('.fa-sync-alt')?.closest('.btn');
+  if (syncButton) {
+    syncButton.addEventListener('click', function() {
+      fetchTimelineData();
+      fetchClusterIssues();
+    });
+  }
   
   // Initialize timeline
   fetchTimelineData();
+  startAutoRefresh();
 });
