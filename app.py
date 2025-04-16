@@ -3,14 +3,17 @@ import datetime
 import json
 import random
 from datetime import datetime, timedelta
+import logging
 
 from agent.tools.k8s_tool import K8sTool
 from agent.llm_agent import LlmAgent
     
+
 k8s_tool = K8sTool()
 llm_agent = LlmAgent()
     
 app = Flask(__name__)
+app.logger.setLevel(logging.DEBUG)
 
 def determine_issue_type(pod_metadata):
     """
@@ -32,10 +35,10 @@ def determine_issue_type(pod_metadata):
             return "FailedScheduling"
     
     # Check containers for image validity
-    containers = pod_metadata.get("containers", [])
-    for container in containers:
-        if container.get("image_valid") is False:
-            return "ImagePullError"
+    # containers = pod_metadata.get("containers", [])
+    # for container in containers:
+    #     if container.get("image_valid") is False:
+    #         return "ImagePullError"
     
     # Default to a generic issue type
     return "PodFailure"
@@ -58,51 +61,33 @@ def index():
 
 @app.route('/api/cluster_issues')
 def get_cluster_issues():
-    """
-    API endpoint to get all issues in the cluster
-    This will be used to populate the timeline view
-    """
-    try:
-        # In a real implementation, we would scan all namespaces
-        # For simplicity, we'll just check the default namespace
-        namespace = "default"
-        
-        # Use the real K8s tool to get broken pods
-        broken_pods = k8s_tool.list_broken_pods(namespace=namespace)
-        
-        # Group the issues by type
-        issue_groups = {}
-        
-        for pod in broken_pods:
-            # Get pod metadata
-            metadata = k8s_tool.gather_metadata(namespace, pod)
-            
-            # Determine the issue type
-            issue_type = determine_issue_type(metadata)
-            severity = determine_severity(issue_type)
-            
-            # Add to the appropriate group
-            if issue_type not in issue_groups:
-                issue_groups[issue_type] = {
-                    "name": issue_type,
-                    "severity": severity,
-                    "pods": [],
-                    "count": 0
-                }
-            
-            issue_groups[issue_type]["pods"].append({
-                "name": pod,
-                "namespace": namespace,
-                "timestamp": datetime.now().isoformat()
-            })
-            issue_groups[issue_type]["count"] += 1
+    namespace = "default"
+    broken_pods = k8s_tool.list_broken_pods(namespace=namespace)  # however you define it
+    issue_groups = {}
+    app.logger.debug(f"[DEBUG] Broken pods = {broken_pods}")
 
-        result = list(issue_groups.values())
-        
-        return jsonify(result)
-    except Exception as e:
-        print(f"Error fetching cluster issues: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+    for pod_name in broken_pods:
+        metadata = k8s_tool.gather_metadata(namespace, pod_name)
+        issue_type = k8s_tool.determine_issue_type(metadata)
+        severity = k8s_tool.determine_severity(issue_type)
+
+        if issue_type not in issue_groups:
+            issue_groups[issue_type] = {
+                "name": issue_type,
+                "severity": severity,
+                "pods": [],
+                "count": 0
+            }
+
+        issue_groups[issue_type]["pods"].append({
+            "name": pod_name,
+            "namespace": namespace,
+            "timestamp": datetime.now().isoformat()
+        })
+        issue_groups[issue_type]["count"] += 1
+
+    app.logger.debug(f"[DEBUG] Issue groups = {issue_groups}")
+    return jsonify(list(issue_groups.values()))
 
 @app.route('/api/analyze/<issue_type>')
 def analyze_issue(issue_type):

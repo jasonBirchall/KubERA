@@ -1,15 +1,13 @@
 import subprocess
 import json
 from rich.console import Console
-from agent.tools.docker_tool import DockerTool
+import logging
 
+logger = logging.getLogger(__name__)
 console = Console()
 
 class K8sTool:
     """Tool for interacting with Kubernetes cluster via kubectl."""
-    
-    def __init__(self):
-        pass  # or inject config if needed
     
     def list_broken_pods(self, namespace="default"):
         """
@@ -39,126 +37,160 @@ class K8sTool:
             console.print(f"[red]Error listing pods:[/red] {e.output.decode()}")
         return failing_pods
 
-    def gather_metadata(self, namespace, pod_name):
+    def gather_metadata(self, namespace: str, pod_name: str) -> dict:
         """
-        Runs 'kubectl describe pod' and parses out relevant fields:
-        - Container names & images
-        - Environment variables (naive line-based approach)
-        - Events
-        Returns a dictionary with something like:
-        {
-            "raw_describe": "...",
-            "containers": [
-            {
-                "name": "my-container",
-                "image": "ubuntu:latest",
-                "env": [
-                {"name": "FOO", "value": "bar"},
-                ...
-                ]
-            },
-            ...
-            ],
-            "events": [
-            "Last event lines or reason",
-            ...
+        Returns a dictionary with:
+          {
+            "namespace": str,
+            "pod_name": str,
+            "raw_describe": str,   # the text output from 'kubectl describe pod'
+            "events": [str, ...], # lines extracted from the 'Events:' section
+            "containers": [       # array of container info (name, image, waiting reason, etc.)
+              {
+                "name": str,
+                "image": str,
+                "waitingReason": str,
+                "terminatedReason": str
+              }, ...
             ]
+          }
+        """
+        metadata = {
+            "namespace": namespace,
+            "pod_name": pod_name,
+            "raw_describe": "",
+            "events": [],
+            "containers": []
         }
-        If there's an error running 'kubectl describe', we store it in {"error_describe": "..."}.
+
+        # 1) Parse 'kubectl describe pod' for events, environment, etc.
+        describe_output = self._run_command(f"kubectl describe pod {pod_name} -n {namespace}")
+        if describe_output is not None:
+            metadata["raw_describe"] = describe_output
+            self._extract_events_from_describe(describe_output, metadata)
+
+        # 2) Parse 'kubectl get pod -o json' for container statuses
+        json_output = self._run_command(f"kubectl get pod {pod_name} -n {namespace} -o json")
+        if json_output is not None:
+            try:
+                pod_obj = json.loads(json_output)
+                container_statuses = pod_obj["status"].get("containerStatuses", [])
+                for cs in container_statuses:
+                    cinfo = {
+                        "name": cs["name"],
+                        "image": cs.get("image", ""),
+                        "waitingReason": cs.get("state", {}).get("waiting", {}).get("reason", ""),
+                        "terminatedReason": cs.get("state", {}).get("terminated", {}).get("reason", "")
+                    }
+                    metadata["containers"].append(cinfo)
+            except json.JSONDecodeError as e:
+                logger.warning(f"Error decoding JSON for {pod_name}: {e}")
+
+        return metadata
+
+    def determine_issue_type(self, metadata: dict) -> str:
+        """
+        Infers the type of issue (CrashLoopBackOff, PodOOMKilled, ImagePullError, etc.)
+        by examining:
+          - The container statuses (waitingReason, terminatedReason)
+          - The 'events' lines from 'kubectl describe'
+        Returns a string like "CrashLoopBackOff", "PodOOMKilled", "ImagePullError", etc.
+        or "PodFailure" if unknown.
         """
 
+        events = metadata.get("events", [])
+        containers = metadata.get("containers", [])
+
+        # 1) Check for known patterns in 'events'
+        for event_line in events:
+            low = event_line.lower()
+            if "oomkilled" in low:
+                return "PodOOMKilled"
+            elif "crashloopbackoff" in low:
+                return "CrashLoopBackOff"
+            elif "errimagepull" in low or "imagepullbackoff" in low:
+                return "ImagePullError"
+            elif "failedscheduling" in low or "schedulingfailed" in low:
+                return "FailedScheduling"
+
+        # 2) Check container states
+        for cinfo in containers:
+            wreason = cinfo.get("waitingReason", "")
+            treason = cinfo.get("terminatedReason", "")
+
+            # If container is waiting with CrashLoopBackOff
+            if wreason == "CrashLoopBackOff":
+                return "CrashLoopBackOff"
+
+            # If container is waiting with 'ErrImagePull' or 'ImagePullBackOff'
+            if wreason in ["ErrImagePull", "ImagePullBackOff"]:
+                return "ImagePullError"
+
+            # If container terminated with reason 'OOMKilled'
+            if treason == "OOMKilled":
+                return "PodOOMKilled"
+
+        # 3) If no match, default to "PodFailure"
+        return "PodFailure"
+
+    def determine_severity(self, issue_type: str) -> str:
+        """
+        Assigns a severity level ("high", "medium", "low") based on the issue type.
+        """
+        high_severity = [
+            "PodOOMKilled",
+            "CrashLoopBackOff",
+            "HighLatencyForCustomerCheckout",
+        ]
+        medium_severity = [
+            "ImagePullError",
+            "KubeDeploymentReplicasMismatch",
+            "TargetDown",
+            "KubePodCrashLooping",
+        ]
+
+        if issue_type in high_severity:
+            return "high"
+        elif issue_type in medium_severity:
+            return "medium"
+        return "low"
+
+    # ---------------------------------------------------------
+    # Internal Helper Methods
+    # ---------------------------------------------------------
+
+    def _run_command(self, cmd: str) -> str or None:
+        """
+        Runs a shell command, returns the decoded stdout if successful,
+        or logs a warning and returns None on error.
+        """
         try:
-            output = subprocess.check_output(
-                f"kubectl describe pod {pod_name} -n {namespace}",
-                shell=True,
-                stderr=subprocess.STDOUT
-            ).decode()
+            output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+            return output.decode()
         except subprocess.CalledProcessError as e:
-            return {"error_describe": e.output.decode()}
+            logger.warning(f"Command failed: {cmd}\nError output: {e.output.decode()}")
+            return None
 
-        lines = output.splitlines()
-        metadata = {
-            "raw_describe": output,
-            "containers": [],
-            "events": []
-        }
-
-        current_container = None
-        in_environment = False
+    def _extract_events_from_describe(self, describe_output: str, metadata: dict) -> None:
+        """
+        Parses the lines under the "Events:" section in 'kubectl describe' output,
+        storing them in metadata["events"].
+        """
+        lines = describe_output.splitlines()
         in_events = False
-
         for line in lines:
             line_stripped = line.strip()
-
-            # Detect the "Events:" heading. We'll store subsequent lines as events
+            # Detect the "Events:" heading
             if line_stripped.startswith("Events:"):
                 in_events = True
                 continue
 
-            # If we are in the events section, parse or store each line until we hit a blank line
-            # or the next big heading. We'll just store them as strings for simplicity.
             if in_events:
-                if not line_stripped:
-                    # blank line might end the events section
+                # If blank line or next heading, events section ended
+                if not line_stripped or line_stripped.endswith(":"):
                     in_events = False
                 else:
-                    # store the event line as is
                     metadata["events"].append(line_stripped)
-                continue
-
-            # If we see a blank line or another heading, end environment parsing
-            if not line_stripped or line_stripped.endswith(":"):
-                in_environment = False
-
-            # For environment, we do a naive approach:
-            if in_environment:
-                # Typically environment lines might look like:
-                # "FOO:    bar"
-                # or "FOO=bar"
-                # We'll handle a couple patterns
-                if current_container is not None:
-                    parts = line_stripped.split(":", 1)
-                    if len(parts) == 2:
-                        env_name = parts[0].strip()
-                        env_value = parts[1].strip()
-                        # If there's a '=' in the name, we handle that
-                        if '=' in env_name:
-                            # e.g. "FOO=bar"
-                            eq_parts = env_name.split('=', 1)
-                            env_name = eq_parts[0].strip()
-                            env_value = eq_parts[1].strip()
-                        current_container.setdefault("env", []).append({
-                            "name": env_name,
-                            "value": env_value
-                        })
-
-            # Look for environment heading
-            if line_stripped.startswith("Environment:"):
-                in_environment = True
-                continue
-
-            # Look for "Name:" line indicating a container name
-            # e.g. "    Name:         my-container"
-            if line_stripped.startswith("Name:"):
-                name_val = line_stripped.split(":", 1)[1].strip()
-                # Start a new container record
-                current_container = {"name": name_val, "env": []}
-                metadata["containers"].append(current_container)
-
-            # Example match: "    Image:          ubuntu:latest"
-            if line_stripped.startswith("Image:"):
-                image_val = line_stripped.split(":", 1)[1].strip()
-                if current_container:
-                    current_container["image"] = image_val
-
-        for container in metadata["containers"]:
-            image_name = container.get("image")
-            if image_name:
-                exists = DockerTool(image_name).check_docker_image_exists()
-                container["image_valid"] = exists
-
-        return metadata
-
 
     def fetch_logs(self, namespace, pod_name, container_name=None, lines=50):
         """
@@ -172,7 +204,7 @@ class K8sTool:
         except subprocess.CalledProcessError as e:
             return f"Error fetching logs:\n{e.output.decode()}"
 
-    def is_pod_failing(namespace, pod_name):
+    def is_pod_failing(self, namespace, pod_name):
         """
         Returns True if the pod has a known error state (like CrashLoopBackOff),
         or if the overall phase is 'Failed'.
