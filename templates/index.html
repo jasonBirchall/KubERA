@@ -189,7 +189,7 @@
           </div>
 
           <div class="events-tabs">
-            <button class="event-tab active">Grouped Events (8)</button>
+            <button class="event-tab active" id="groupedEventsTab">Grouped Events (0)</button>
             <button class="event-tab">Event Stream (53)</button>
           </div>
 
@@ -243,14 +243,23 @@
           //   ...
           // ]
 
+          // 1) Target the table body
           const tableBody = document.getElementById('eventsTableBody');
-
-          // Clear anything in <tbody> (should be empty anyway)
           tableBody.innerHTML = '';
 
+          // 2) Update the 'Grouped Events' tab label
+          const groupCount = issues.length; // # of distinct groups
+          const groupedEventsTab = document.getElementById('groupedEventsTab');
+          groupedEventsTab.textContent = `Grouped Events (${groupCount})`;
+
+          // 3) We'll also update the 'Event Stream' tab by summing the counts
+          let totalEvents = 0;
+
+          // 4) Loop over each issue to build a row
           issues.forEach(issue => {
-            // Convert severity ("high", "medium", "low") to uppercase
-            // and pick the correct 'badge' class for styling
+            totalEvents += issue.count;  // add how many pods are in this group
+
+            // Convert severity to uppercase + pick a badge color
             const severityText = (issue.severity || '').toUpperCase();
             let badgeClass = 'badge-low'; // default
             if (issue.severity === 'high') {
@@ -259,11 +268,9 @@
               badgeClass = 'badge-medium';
             }
 
-            // Find the latest timestamp from the pods
-            // so we can display something in the "Latest" column
+            // Find the latest timestamp from the pods for the "Latest" column
             let latestPod = null;
             if (issue.pods && issue.pods.length > 0) {
-              // For a quick approach, just pick the one with the max timestamp
               latestPod = issue.pods.reduce((acc, p) => {
                 if (!acc) return p;
                 const accTime = new Date(acc.timestamp);
@@ -273,9 +280,6 @@
             }
 
             // Build the row
-            // - “Cluster” is not in your JSON; you can show “demo-cluster” or
-            //   e.g. parse from your 'kind-config.yaml' name, or from the DB.
-            // - The onclick calls `openAnalysisPanel(issue.name)` just like your placeholders.
             const row = document.createElement('tr');
             row.setAttribute('onclick', `openAnalysisPanel('${issue.name}')`);
             row.innerHTML = `
@@ -287,14 +291,18 @@
               <td>${latestPod ? 'Pod ' + latestPod.name : '-'}</td>
             `;
 
-            // Append to the table
             tableBody.appendChild(row);
-          });
+          }); // <-- CLOSES the forEach loop
+
+          // 5) Now that we've summed 'totalEvents', update the second tab label
+          const eventStreamTab = document.getElementById('eventStreamTab');
+          eventStreamTab.textContent = `Event Stream (${totalEvents})`;
         })
         .catch(error => {
           console.error('Error fetching cluster issues:', error);
         });
     });
+
     // Called when user clicks a row in the events table
     function openAnalysisPanel(issueType) {
       // Show the panel
@@ -312,20 +320,20 @@
         .then(response => response.json())
         .then(data => {
           /* Expected response shape:
-             {
-               "issue_type": "PodOOMKilled",
-               "analysis": [
-                 {
-                   "pod_name": "my-pod-abc",
-                   "root_cause": [...],
-                   "recommended_actions": [...],
-                   "pod_events": [...],
-                   "logs_excerpt": [...],
-                   ...
-                 },
-                 { ... } // more pods
-               ]
-             }
+            {
+              "issue_type": "PodOOMKilled",
+              "analysis": [
+                {
+                  "pod_name": "my-pod-abc",
+                  "root_cause": [...],
+                  "recommended_actions": [...],
+                  "pod_events": [...],
+                  "logs_excerpt": [...],
+                  ...
+                },
+                { ... } // more pods
+              ]
+            }
           */
           if (!data.analysis || data.analysis.length === 0) {
             contentEl.innerHTML = `<p>No pods found for: ${issueType}</p>`;
