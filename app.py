@@ -62,7 +62,7 @@ def index():
 @app.route('/api/cluster_issues')
 def get_cluster_issues():
     namespace = "default"
-    broken_pods = k8s_tool.list_broken_pods(namespace=namespace)  # however you define it
+    broken_pods = k8s_tool.list_broken_pods(namespace=namespace)
     issue_groups = {}
     app.logger.debug(f"[DEBUG] Broken pods = {broken_pods}")
 
