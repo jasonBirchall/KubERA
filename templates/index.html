@@ -230,19 +230,41 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   // State variables
-  let groupedEvents = [];
-  let individualEvents = [];
+  let allGroupedEvents = []; // Original data from API
+  let allIndividualEvents = []; // Original flattened data
+  let groupedEvents = []; // Filtered data
+  let individualEvents = []; // Filtered data
   let activeTab = 'grouped'; // Default active tab
+  let activeNamespace = 'All'; // Default namespace filter
 
   // DOM elements
   const groupedEventsTab = document.getElementById('groupedEventsTab');
-  const eventStreamTab = document.getElementById('eventStreamTab');
+  const eventStreamTab = document.querySelector('.event-tab:nth-child(2)'); // The Event Stream tab
   const tableBody = document.getElementById('eventsTableBody');
   const tableHead = document.querySelector('.events-table thead tr');
+  const namespaceTags = document.querySelectorAll('.filter-section:nth-child(2) .filter-tag');
+
+  // Add IDs to make selection easier
+  eventStreamTab.id = 'eventStreamTab';
 
   // Add click event listeners to tabs
   groupedEventsTab.addEventListener('click', () => switchTab('grouped'));
   eventStreamTab.addEventListener('click', () => switchTab('stream'));
+
+  // Add click event listeners to namespace filters
+  namespaceTags.forEach(tag => {
+    tag.addEventListener('click', function() {
+      // Remove active class from all namespace tags
+      namespaceTags.forEach(t => t.classList.remove('active'));
+      
+      // Add active class to clicked tag
+      this.classList.add('active');
+      
+      // Update active namespace and apply filter
+      activeNamespace = this.textContent;
+      applyFilters();
+    });
+  });
 
   // Function to switch between tabs
   function switchTab(tabName) {
@@ -274,9 +296,66 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  // Filter data based on active filters
+  function applyFilters() {
+    if (activeNamespace === 'All') {
+      // No filtering needed, use all data
+      groupedEvents = allGroupedEvents;
+      individualEvents = allIndividualEvents;
+    } else {
+      // Filter individual events first
+      individualEvents = allIndividualEvents.filter(event => 
+        event.namespace === activeNamespace
+      );
+      
+      // Then recreate grouped events based on filtered individual events
+      const groupMap = {};
+      
+      individualEvents.forEach(event => {
+        if (!groupMap[event.alertType]) {
+          // Find the original group to get its severity
+          const originalGroup = allGroupedEvents.find(g => g.name === event.alertType);
+          
+          groupMap[event.alertType] = {
+            name: event.alertType,
+            severity: originalGroup ? originalGroup.severity : 'low',
+            pods: [],
+            count: 0
+          };
+        }
+        
+        groupMap[event.alertType].pods.push({
+          name: event.pod,
+          namespace: event.namespace,
+          timestamp: event.timestamp
+        });
+        
+        groupMap[event.alertType].count++;
+      });
+      
+      groupedEvents = Object.values(groupMap);
+    }
+    
+    // Update tab labels with filtered counts
+    groupedEventsTab.textContent = `Grouped Events (${groupedEvents.length})`;
+    eventStreamTab.textContent = `Event Stream (${individualEvents.length})`;
+    
+    // Re-render the current view
+    if (activeTab === 'grouped') {
+      renderGroupedEvents();
+    } else {
+      renderEventStream();
+    }
+  }
+
   // Function to render grouped events
   function renderGroupedEvents() {
     tableBody.innerHTML = '';
+    
+    if (groupedEvents.length === 0) {
+      tableBody.innerHTML = `<tr><td colspan="5" style="text-align: center;">No events found for the selected filters</td></tr>`;
+      return;
+    }
     
     groupedEvents.forEach(issue => {
       // Determine badge class based on severity
@@ -318,6 +397,11 @@ document.addEventListener('DOMContentLoaded', function() {
   function renderEventStream() {
     tableBody.innerHTML = '';
     
+    if (individualEvents.length === 0) {
+      tableBody.innerHTML = `<tr><td colspan="5" style="text-align: center;">No events found for the selected filters</td></tr>`;
+      return;
+    }
+    
     individualEvents.forEach(event => {
       // Determine badge class based on severity
       const severityText = (event.severity || '').toUpperCase();
@@ -355,27 +439,32 @@ document.addEventListener('DOMContentLoaded', function() {
     fetch('/api/cluster_issues')
       .then(response => response.json())
       .then(issues => {
-        // Store the grouped events
-        groupedEvents = issues;
+        // Store the original grouped events
+        allGroupedEvents = issues;
         
-        // Update the 'Grouped Events' tab label
-        const groupCount = issues.length;
-        groupedEventsTab.textContent = `Grouped Events (${groupCount})`;
-
-        // Process individual events for the event stream view
-        individualEvents = [];
+        // Process all individual events
+        allIndividualEvents = [];
         let totalEvents = 0;
+        
+        // Also collect unique namespaces to potentially update filter options
+        const namespaces = new Set();
+        namespaces.add('All'); // Always include "All"
         
         issues.forEach(issue => {
           totalEvents += issue.count;
           
           if (issue.pods) {
             issue.pods.forEach(pod => {
-              individualEvents.push({
+              // Add namespace to our set of unique namespaces
+              if (pod.namespace) {
+                namespaces.add(pod.namespace);
+              }
+              
+              allIndividualEvents.push({
                 severity: issue.severity,
                 alertType: issue.name,
                 pod: pod.name,
-                namespace: pod.namespace,
+                namespace: pod.namespace || 'default',
                 timestamp: pod.timestamp
               });
             });
@@ -383,92 +472,59 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         // Sort by timestamp, newest first
-        individualEvents.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        allIndividualEvents.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         
-        // Update the 'Event Stream' tab label
-        eventStreamTab.textContent = `Event Stream (${individualEvents.length})`;
+        // Update namespace filter tags if they're missing any namespaces
+        // This ensures all available namespaces show in the filter
+        updateNamespaceFilters(namespaces);
         
-        // Initially render the grouped view
-        renderGroupedEvents();
+        // Apply initial filters (which defaults to "All")
+        applyFilters();
       })
       .catch(error => {
         console.error('Error fetching cluster issues:', error);
         tableBody.innerHTML = `<tr><td colspan="5">Error loading data: ${error.message}</td></tr>`;
       });
   }
+  
+  // Function to update namespace filters with any missing namespaces
+  function updateNamespaceFilters(namespaces) {
+    const namespaceSection = document.querySelector('.filter-section:nth-child(2) .filter-tags');
+    
+    // Get existing namespace filter tags
+    const existingNamespaces = new Set();
+    namespaceTags.forEach(tag => {
+      existingNamespaces.add(tag.textContent);
+    });
+    
+    // Add any missing namespaces
+    namespaces.forEach(namespace => {
+      if (!existingNamespaces.has(namespace)) {
+        const newTag = document.createElement('div');
+        newTag.className = 'filter-tag';
+        newTag.textContent = namespace;
+        newTag.addEventListener('click', function() {
+          // Remove active class from all namespace tags
+          document.querySelectorAll('.filter-section:nth-child(2) .filter-tag').forEach(t => {
+            t.classList.remove('active');
+          });
+          
+          // Add active class to clicked tag
+          this.classList.add('active');
+          
+          // Update active namespace and apply filter
+          activeNamespace = this.textContent;
+          applyFilters();
+        });
+        
+        namespaceSection.appendChild(newTag);
+      }
+    });
+  }
 
   // Initial fetch when page loads
   fetchClusterIssues();
 });
-
-// These functions should remain outside the DOMContentLoaded event
-// to be globally accessible for the onclick handlers
-function openAnalysisPanel(issueType) {
-  // Show the panel
-  const panel = document.getElementById('analysisPanel');
-  const titleEl = document.querySelector('.analysis-title');
-  const contentEl = document.querySelector('.analysis-content');
-
-  // Set placeholder text
-  titleEl.textContent = "Investigating alert " + issueType;
-  contentEl.innerHTML = "<p>Loading analysis...</p>";
-  panel.classList.add('open');
-
-  // Make the request to your backend /api/analyze/<issueType>
-  fetch(`/api/analyze/${issueType}`)
-    .then(response => response.json())
-    .then(data => {
-      if (!data.analysis || data.analysis.length === 0) {
-        contentEl.innerHTML = `<p>No pods found for: ${issueType}</p>`;
-        return;
-      }
-
-      // Build HTML for each failing pod
-      const itemsHTML = data.analysis.map(item => {
-        const podName = item.pod_name;
-        const rootCause = item.root_cause || [];
-        const recActions = item.recommended_actions || [];
-        const events = item.pod_events || [];
-        const logs = item.logs_excerpt || [];
-
-        // turn each array into bullet points
-        const rootCauseHTML = rootCause.map(rc => `<li>${rc}</li>`).join('');
-        const recActionsHTML = recActions.map(r => `<li>${r}</li>`).join('');
-        const eventsHTML = events.map(e => `<li>${e}</li>`).join('');
-        const logsHTML = logs.map(line => `<div class="log-line">${line}</div>`).join('');
-
-        return `
-          <div style="margin-bottom:24px;">
-            <h3>Pod: ${podName}</h3>
-            <h4>Root Cause</h4>
-            <ul>${rootCauseHTML}</ul>
-
-            <h4>Recommended Actions</h4>
-            <ul>${recActionsHTML}</ul>
-
-            <h4>Pod Events</h4>
-            <ul>${eventsHTML}</ul>
-
-            <h4>Logs (excerpt)</h4>
-            <div style="background:#111; padding:12px; max-height:150px; overflow-y:auto;">
-              ${logsHTML}
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      contentEl.innerHTML = itemsHTML;
-    })
-    .catch(error => {
-      console.error("Error fetching analysis:", error);
-      contentEl.innerHTML = `<p style="color:red;">Failed to load analysis: ${error}</p>`;
-    });
-}
-
-function closeAnalysisPanel() {
-  const panel = document.getElementById('analysisPanel');
-  panel.classList.remove('open');
-}
 </script>
 </body>
 </html>
