@@ -221,7 +221,7 @@ document.addEventListener('DOMContentLoaded', function() {
       });
   }
 
-  // Render the namespace filters
+  // Render the namespace filters with "more +" feature
   function renderNamespaceFilters(namespaces) {
     const filterTags = document.getElementById('namespaceFilterTags');
     
@@ -231,44 +231,69 @@ document.addEventListener('DOMContentLoaded', function() {
     // Keep only the "All" option
     filterTags.innerHTML = '<div class="filter-tag active">All</div>';
     
-    // Add each namespace as a filter tag with improved visibility
-    namespaces.forEach(namespace => {
-      const tag = document.createElement('div');
-      tag.className = 'filter-tag';
+    // Track if we're showing all namespaces or just the first 5
+    let showingAll = false;
+    
+    // Function to render a limited or full set of namespaces
+    function renderNamespaceSet(showAll = false) {
+      // Clear current tags except "All"
+      const allTag = filterTags.querySelector('.filter-tag');
+      filterTags.innerHTML = '';
+      filterTags.appendChild(allTag);
       
-      // Use the namespace string directly instead of trying to access a property
-      tag.textContent = namespace; // The namespace is already a string
+      // Determine how many namespaces to show
+      const displayCount = showAll ? namespaces.length : Math.min(5, namespaces.length);
       
-      // Improve visibility with inline style 
-      tag.style.color = '#d8d9da'; // Lighter color for better contrast
-      tag.style.backgroundColor = '#2a2a36'; // Slightly lighter background
-      
-      tag.addEventListener('click', function() {
-        // Remove active class from all namespace tags
-        document.querySelectorAll('#namespaceFilterTags .filter-tag').forEach(t => {
-          t.classList.remove('active');
-          // Reset styles when deactivated
-          t.style.color = '#d8d9da';
-          t.style.backgroundColor = '#2a2a36';
+      // Add namespace tags
+      for (let i = 0; i < displayCount; i++) {
+        const namespace = namespaces[i];
+        const tag = document.createElement('div');
+        tag.className = 'filter-tag';
+        tag.textContent = namespace;
+        tag.style.color = '#d8d9da';
+        tag.style.backgroundColor = '#2a2a36';
+        
+        tag.addEventListener('click', function() {
+          document.querySelectorAll('#namespaceFilterTags .filter-tag').forEach(t => {
+            t.classList.remove('active');
+            t.style.color = '#d8d9da';
+            t.style.backgroundColor = '#2a2a36';
+          });
+          
+          this.classList.add('active');
+          this.style.backgroundColor = '#3872f2';
+          this.style.color = 'white';
+          
+          activeNamespace = this.textContent;
+          applyFilters();
         });
         
-        // Add active class to clicked tag
-        this.classList.add('active');
-        // Apply active styles
-        this.style.backgroundColor = '#3872f2';
-        this.style.color = 'white';
-        
-        // Update active namespace and apply filter
-        activeNamespace = this.textContent;
-        applyFilters();
-      });
+        filterTags.appendChild(tag);
+      }
       
-      filterTags.appendChild(tag);
-      console.log('Added namespace tag:', namespace);
-    });
+      // If there are more than 5 namespaces, add a "more +" or "less -" tag
+      if (namespaces.length > 5) {
+        const moreTag = document.createElement('div');
+        moreTag.className = 'filter-tag';
+        moreTag.textContent = showAll ? 'less -' : 'more +';
+        moreTag.style.color = '#3872f2';
+        moreTag.style.backgroundColor = 'transparent';
+        moreTag.style.border = '1px dashed #3872f2';
+        
+        moreTag.addEventListener('click', function() {
+          showingAll = !showingAll;
+          renderNamespaceSet(showingAll);
+        });
+        
+        filterTags.appendChild(moreTag);
+      }
+      
+      // Update reference to namespace tags
+      namespaceTags = document.querySelectorAll('#namespaceFilterTags .filter-tag');
+    }
     
-    // Update reference to namespace tags
-    namespaceTags = document.querySelectorAll('#namespaceFilterTags .filter-tag');
+    // Initial render with limited namespaces
+    renderNamespaceSet(showingAll);
   }
 
   // Fetch available Kubernetes contexts
