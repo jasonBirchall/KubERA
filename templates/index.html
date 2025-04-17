@@ -220,7 +220,6 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error('Error fetching Kubernetes namespaces:', error);
       });
   }
-
   // Render the namespace filters with "more +" feature
   function renderNamespaceFilters(namespaces) {
     const filterTags = document.getElementById('namespaceFilterTags');
@@ -228,8 +227,34 @@ document.addEventListener('DOMContentLoaded', function() {
     // Log the namespaces we're trying to render
     console.log('Rendering namespaces:', namespaces);
     
-    // Keep only the "All" option
-    filterTags.innerHTML = '<div class="filter-tag active">All</div>';
+    // Clear all existing tags
+    filterTags.innerHTML = '';
+    
+    // Add the "All" option with proper click handler
+    const allTag = document.createElement('div');
+    allTag.className = 'filter-tag active';
+    allTag.textContent = 'All';
+    allTag.style.backgroundColor = '#3872f2';
+    allTag.style.color = 'white';
+    
+    allTag.addEventListener('click', function() {
+      // Remove active class from all namespace tags
+      document.querySelectorAll('#namespaceFilterTags .filter-tag').forEach(t => {
+        t.classList.remove('active');
+        t.style.color = '#d8d9da';
+        t.style.backgroundColor = '#2a2a36';
+      });
+      
+      // Activate this tag
+      this.classList.add('active');
+      this.style.backgroundColor = '#3872f2';
+      this.style.color = 'white';
+      
+      activeNamespace = 'All';
+      applyFilters();
+    });
+    
+    filterTags.appendChild(allTag);
     
     // Track if we're showing all namespaces or just the first 5
     let showingAll = false;
@@ -237,9 +262,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Function to render a limited or full set of namespaces
     function renderNamespaceSet(showAll = false) {
       // Clear current tags except "All"
-      const allTag = filterTags.querySelector('.filter-tag');
-      filterTags.innerHTML = '';
-      filterTags.appendChild(allTag);
+      const tags = Array.from(filterTags.querySelectorAll('.filter-tag:not(:first-child)'));
+      tags.forEach(tag => tag.remove());
       
       // Determine how many namespaces to show
       const displayCount = showAll ? namespaces.length : Math.min(5, namespaces.length);
@@ -274,13 +298,16 @@ document.addEventListener('DOMContentLoaded', function() {
       // If there are more than 5 namespaces, add a "more +" or "less -" tag
       if (namespaces.length > 5) {
         const moreTag = document.createElement('div');
-        moreTag.className = 'filter-tag';
+        moreTag.className = 'filter-tag more-tag';  // Add a special class
         moreTag.textContent = showAll ? 'less -' : 'more +';
         moreTag.style.color = '#3872f2';
         moreTag.style.backgroundColor = 'transparent';
         moreTag.style.border = '1px dashed #3872f2';
         
-        moreTag.addEventListener('click', function() {
+        moreTag.addEventListener('click', function(e) {
+          // Prevent this click from triggering filters
+          e.stopPropagation();
+          
           showingAll = !showingAll;
           renderNamespaceSet(showingAll);
         });
@@ -289,7 +316,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       
       // Update reference to namespace tags
-      namespaceTags = document.querySelectorAll('#namespaceFilterTags .filter-tag');
+      namespaceTags = document.querySelectorAll('#namespaceFilterTags .filter-tag:not(.more-tag)');
     }
     
     // Initial render with limited namespaces
