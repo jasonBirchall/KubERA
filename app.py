@@ -1,3 +1,4 @@
+from os import name
 from flask import Flask, render_template, request, jsonify
 import datetime
 import random
@@ -59,7 +60,19 @@ def determine_severity(issue_type):
 def index():
     return render_template('index.html')
 
-# Add this route to your app.py file
+@app.route('/api/namespaces')
+def get_namespaces():
+    """
+    Returns a list of all namespaces in the current Kubernetes context
+    """
+    cmd = "kubectl get namespaces -o=jsonpath='{.items[*].metadata.name}'"
+    output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
+    
+    namespaces = output.decode().split()
+    app.logger.debug(f"[DEBUG] Namespaces identified for filter = {namespaces}")
+    
+    return jsonify(namespaces)
+    
 @app.route('/api/kube-contexts')
 def get_kube_contexts():
     """

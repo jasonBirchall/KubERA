@@ -74,17 +74,13 @@
         <div class="filter-title">Filters</div>
         <input type="text" class="filter-input" placeholder="Type / to search">
       </div>
-
       <div class="filter-section">
         <div class="filter-title">Namespace</div>
-        <div class="filter-tags">
+        <div class="filter-tags" id="namespaceFilterTags">
           <div class="filter-tag active">All</div>
-          <div class="filter-tag">default</div>
-          <div class="filter-tag">kube-system</div>
-          <div class="filter-tag">monitoring</div>
+          <!-- Namespaces will be loaded dynamically -->
         </div>
       </div>
-
       <div class="filter-section">
         <div class="filter-title">Alert</div>
         <div class="filter-tags">
@@ -199,13 +195,13 @@ document.addEventListener('DOMContentLoaded', function() {
   let activeTab = 'grouped'; // Default active tab
   let activeNamespace = 'All'; // Default namespace filter
   let currentCluster = ''; // Current selected cluster
+  let namespaceTags = document.querySelectorAll('.filter-section:nth-child(2) .filter-tag');
 
   // DOM elements
   const groupedEventsTab = document.getElementById('groupedEventsTab');
   const eventStreamTab = document.querySelector('.event-tab:nth-child(2)'); // The Event Stream tab
   const tableBody = document.getElementById('eventsTableBody');
   const tableHead = document.querySelector('.events-table thead tr');
-  const namespaceTags = document.querySelectorAll('.filter-section:nth-child(2) .filter-tag');
   const clusterSelectorBtn = document.getElementById('clusterSelectorBtn');
   const clusterDropdown = document.getElementById('clusterDropdown');
   const currentClusterName = document.getElementById('currentClusterName');
@@ -213,18 +209,66 @@ document.addEventListener('DOMContentLoaded', function() {
   // Add IDs to make selection easier
   eventStreamTab.id = 'eventStreamTab';
 
-  // Set up cluster selector dropdown
-  if (clusterSelectorBtn && clusterDropdown) {
-    clusterSelectorBtn.addEventListener('click', function() {
-      clusterDropdown.style.display = (clusterDropdown.style.display === 'none') ? 'block' : 'none';
-    });
+  // Fetch all namespaces from the current context
+  function fetchNamespaces() {
+    fetch('/api/namespaces')
+      .then(response => response.json())
+      .then(namespaces => {
+        renderNamespaceFilters(namespaces);
+      })
+      .catch(error => {
+        console.error('Error fetching Kubernetes namespaces:', error);
+      });
+  }
 
-    // Hide dropdown if clicked elsewhere
-    document.addEventListener('click', function(event) {
-      if (!clusterSelectorBtn.contains(event.target) && !clusterDropdown.contains(event.target)) {
-        clusterDropdown.style.display = 'none';
-      }
+  // Render the namespace filters
+  function renderNamespaceFilters(namespaces) {
+    const filterTags = document.getElementById('namespaceFilterTags');
+    
+    // Log the namespaces we're trying to render
+    console.log('Rendering namespaces:', namespaces);
+    
+    // Keep only the "All" option
+    filterTags.innerHTML = '<div class="filter-tag active">All</div>';
+    
+    // Add each namespace as a filter tag with improved visibility
+    namespaces.forEach(namespace => {
+      const tag = document.createElement('div');
+      tag.className = 'filter-tag';
+      
+      // Use the namespace string directly instead of trying to access a property
+      tag.textContent = namespace; // The namespace is already a string
+      
+      // Improve visibility with inline style 
+      tag.style.color = '#d8d9da'; // Lighter color for better contrast
+      tag.style.backgroundColor = '#2a2a36'; // Slightly lighter background
+      
+      tag.addEventListener('click', function() {
+        // Remove active class from all namespace tags
+        document.querySelectorAll('#namespaceFilterTags .filter-tag').forEach(t => {
+          t.classList.remove('active');
+          // Reset styles when deactivated
+          t.style.color = '#d8d9da';
+          t.style.backgroundColor = '#2a2a36';
+        });
+        
+        // Add active class to clicked tag
+        this.classList.add('active');
+        // Apply active styles
+        this.style.backgroundColor = '#3872f2';
+        this.style.color = 'white';
+        
+        // Update active namespace and apply filter
+        activeNamespace = this.textContent;
+        applyFilters();
+      });
+      
+      filterTags.appendChild(tag);
+      console.log('Added namespace tag:', namespace);
     });
+    
+    // Update reference to namespace tags
+    namespaceTags = document.querySelectorAll('#namespaceFilterTags .filter-tag');
   }
 
   // Fetch available Kubernetes contexts
@@ -284,6 +328,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Reload data for the new cluster (in a real implementation)
         fetchClusterIssues();
+        fetchNamespaces();
       });
       
       clusterDropdown.appendChild(item);
@@ -567,6 +612,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Initial fetch of Kubernetes contexts and cluster issues
   fetchKubeContexts();
+  fetchNamespaces();
   fetchClusterIssues();
 });
 
