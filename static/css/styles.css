@@ -459,3 +459,73 @@ body {
   background-color: #2c2c35;
   font-weight: bold;
 }
+
+/* Add these styles to your existing styles.css file */
+
+/* Cluster selector styling */
+.cluster-selector-container {
+  position: relative;
+  margin-left: 12px;
+}
+
+.cluster-selector-btn {
+  background-color: #111217;
+  color: #d8d9da;
+  border: 1px solid #2c2c35;
+  padding: 5px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  min-width: 180px;
+  justify-content: space-between;
+}
+
+.cluster-selector-btn:hover {
+  background-color: #202226;
+}
+
+.cluster-selector-btn i.btn-icon {
+  margin-right: 6px;
+  color: #3872f2;
+}
+
+.cluster-selector-btn i.fa-caret-down {
+  margin-left: 6px;
+  font-size: 12px;
+  color: #7e7e8f;
+}
+
+#currentClusterName {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+
+#clusterDropdown {
+  min-width: 200px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+#clusterDropdown .dropdown-item {
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+#clusterDropdown .dropdown-item:hover {
+  background-color: #202226;
+}
+
+#clusterDropdown .dropdown-item.active {
+  background-color: rgba(56, 114, 242, 0.15);
+  color: #5794ff;
+}
+
+.cluster-loading {
+  color: #7e7e8f;
+  font-style: italic;
+}

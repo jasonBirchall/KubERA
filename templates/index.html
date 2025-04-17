@@ -12,10 +12,15 @@
   <div class="top-nav">
     <div class="top-nav-left">
       <div class="logo">Timeline</div>
-      <select class="preset-selector" id="presetSelector">
-        <option value="presets">Presets ▾</option>
-        <option value="nicolas-multi-node-kind-cluster">nicolas-multi-node-kind-cluster</option>
-      </select>
+      <div class="cluster-selector-container">
+        <button class="cluster-selector-btn" id="clusterSelectorBtn">
+          <i class="fas fa-cubes btn-icon"></i> <span id="currentClusterName">Loading cluster...</span> <i class="fas fa-caret-down"></i>
+        </button>
+        <div id="clusterDropdown" class="dropdown-menu" style="display: none; position: absolute; background-color: #1c1c28; border: 1px solid #2c2c35; padding: 8px; z-index: 10; min-width: 200px;">
+          <!-- Clusters will be loaded here -->
+          <div class="dropdown-item cluster-loading">Loading contexts...</div>
+        </div>
+      </div>
     </div>
     <div class="top-nav-right">
       <div class="btn-group">
@@ -193,6 +198,7 @@ document.addEventListener('DOMContentLoaded', function() {
   let individualEvents = []; // Filtered data
   let activeTab = 'grouped'; // Default active tab
   let activeNamespace = 'All'; // Default namespace filter
+  let currentCluster = ''; // Current selected cluster
 
   // DOM elements
   const groupedEventsTab = document.getElementById('groupedEventsTab');
@@ -200,9 +206,89 @@ document.addEventListener('DOMContentLoaded', function() {
   const tableBody = document.getElementById('eventsTableBody');
   const tableHead = document.querySelector('.events-table thead tr');
   const namespaceTags = document.querySelectorAll('.filter-section:nth-child(2) .filter-tag');
+  const clusterSelectorBtn = document.getElementById('clusterSelectorBtn');
+  const clusterDropdown = document.getElementById('clusterDropdown');
+  const currentClusterName = document.getElementById('currentClusterName');
 
   // Add IDs to make selection easier
   eventStreamTab.id = 'eventStreamTab';
+
+  // Set up cluster selector dropdown
+  if (clusterSelectorBtn && clusterDropdown) {
+    clusterSelectorBtn.addEventListener('click', function() {
+      clusterDropdown.style.display = (clusterDropdown.style.display === 'none') ? 'block' : 'none';
+    });
+
+    // Hide dropdown if clicked elsewhere
+    document.addEventListener('click', function(event) {
+      if (!clusterSelectorBtn.contains(event.target) && !clusterDropdown.contains(event.target)) {
+        clusterDropdown.style.display = 'none';
+      }
+    });
+  }
+
+  // Fetch available Kubernetes contexts
+  function fetchKubeContexts() {
+    // In a real implementation, this would be an API call to your backend
+    // For now, we'll simulate it with some example contexts
+    fetch('/api/kube-contexts')
+      .then(response => response.json())
+      .then(contexts => {
+        renderKubeContexts(contexts);
+      })
+      .catch(error => {
+        console.error('Error fetching Kubernetes contexts:', error);
+        // Fallback to default sample contexts in case of error
+        const sampleContexts = [
+          { name: 'kubera-local', current: true },
+          { name: 'prod-cluster', current: false },
+          { name: 'staging-cluster', current: false },
+          { name: 'minikube', current: false }
+        ];
+        renderKubeContexts(sampleContexts);
+      });
+  }
+
+  // Render Kubernetes contexts in the dropdown
+  function renderKubeContexts(contexts) {
+    clusterDropdown.innerHTML = '';
+    
+    if (!contexts || contexts.length === 0) {
+      clusterDropdown.innerHTML = '<div class="dropdown-item">No contexts available</div>';
+      return;
+    }
+    
+    contexts.forEach(context => {
+      const item = document.createElement('div');
+      item.className = 'dropdown-item' + (context.current ? ' active' : '');
+      item.textContent = context.name;
+      
+      if (context.current) {
+        currentCluster = context.name;
+        currentClusterName.textContent = context.name;
+      }
+      
+      item.addEventListener('click', function() {
+        // In a real implementation, you would call an API to switch contexts
+        // For demo purposes, we'll just update the UI
+        document.querySelectorAll('#clusterDropdown .dropdown-item').forEach(i => i.classList.remove('active'));
+        this.classList.add('active');
+        currentClusterName.textContent = context.name;
+        currentCluster = context.name;
+        
+        // Update the page title to include cluster name
+        document.title = `KubERA - ${context.name}`;
+        
+        // Close the dropdown
+        clusterDropdown.style.display = 'none';
+        
+        // Reload data for the new cluster (in a real implementation)
+        fetchClusterIssues();
+      });
+      
+      clusterDropdown.appendChild(item);
+    });
+  }
 
   // Add click event listeners to tabs
   groupedEventsTab.addEventListener('click', () => switchTab('grouped'));
@@ -479,9 +565,89 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // Initial fetch when page loads
+  // Initial fetch of Kubernetes contexts and cluster issues
+  fetchKubeContexts();
   fetchClusterIssues();
 });
+
+// This function will be called when clicking on an event row
+function openAnalysisPanel(issueType) {
+  const panel = document.getElementById('analysisPanel');
+  const title = panel.querySelector('.analysis-title');
+  const content = panel.querySelector('.analysis-content');
+  
+  title.textContent = `Investigating alert: ${issueType}`;
+  content.innerHTML = '<div style="text-align: center; padding: 20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Loading analysis...</p></div>';
+  
+  // Show the panel
+  panel.classList.add('open');
+  
+  // Fetch analysis data for this issue type
+  fetch(`/api/analyze/${issueType}`)
+    .then(response => response.json())
+    .then(data => {
+      renderAnalysis(data);
+    })
+    .catch(error => {
+      content.innerHTML = `<div class="error-message">Error loading analysis: ${error.message}</div>`;
+    });
+}
+
+// Close the analysis panel
+function closeAnalysisPanel() {
+  const panel = document.getElementById('analysisPanel');
+  panel.classList.remove('open');
+}
+
+// Render the analysis data in the panel
+function renderAnalysis(data) {
+  const content = document.querySelector('.analysis-content');
+  
+  if (!data || !data.analysis || data.analysis.length === 0) {
+    content.innerHTML = `<div class="error-message">No analysis data available</div>`;
+    return;
+  }
+  
+  let html = '';
+  
+  data.analysis.forEach(result => {
+    html += `
+      <div class="analysis-section">
+        <div class="section-title">Pod: ${result.pod_name}</div>
+        
+        <div class="analysis-subsection">
+          <h4>Root Cause</h4>
+          <ul class="root-cause-list">
+            ${result.root_cause.map(cause => `<li>${cause}</li>`).join('')}
+          </ul>
+        </div>
+        
+        <div class="analysis-subsection">
+          <h4>Recommended Actions</h4>
+          <ul class="root-cause-list">
+            ${result.recommended_actions.map(action => `<li>${action}</li>`).join('')}
+          </ul>
+        </div>
+        
+        <div class="analysis-subsection">
+          <h4>Events</h4>
+          <div class="logs-container">
+            ${result.pod_events.map(event => `<div class="log-line">${event}</div>`).join('')}
+          </div>
+        </div>
+        
+        <div class="analysis-subsection">
+          <h4>Recent Logs</h4>
+          <div class="logs-container">
+            ${result.logs_excerpt.map(log => `<div class="log-line">${log}</div>`).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  });
+  
+  content.innerHTML = html;
+}
 </script>
 <script src="{{ url_for('static', filename='js/timeline.js') }}"></script>
 </body>

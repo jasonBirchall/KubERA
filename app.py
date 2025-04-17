@@ -4,6 +4,7 @@ import random
 from datetime import datetime
 import logging
 
+import subprocess
 from agent.tools.k8s_tool import K8sTool
 from agent.llm_agent import LlmAgent
     
@@ -58,6 +59,67 @@ def determine_severity(issue_type):
 def index():
     return render_template('index.html')
 
+# Add this route to your app.py file
+@app.route('/api/kube-contexts')
+def get_kube_contexts():
+    """
+    Returns a list of available Kubernetes contexts from kubectl config
+    """
+    try:
+        # Get current context
+        current_context_cmd = "kubectl config current-context"
+        current_context = subprocess.check_output(current_context_cmd, shell=True).decode().strip()
+        
+        # Get all contexts
+        contexts_cmd = "kubectl config get-contexts -o name"
+        contexts_output = subprocess.check_output(contexts_cmd, shell=True).decode().strip()
+        
+        # Parse the output
+        context_list = []
+        if contexts_output:
+            all_contexts = contexts_output.split('\n')
+            for context in all_contexts:
+                context_name = context.strip()
+                context_list.append({
+                    "name": context_name,
+                    "current": context_name == current_context
+                })
+        
+        return jsonify(context_list)
+    
+    except subprocess.CalledProcessError as e:
+        app.logger.error(f"Error fetching Kubernetes contexts: {str(e)}")
+        # Return sample contexts as fallback
+        fallback_contexts = [
+            {"name": "kubera-local", "current": True},
+            {"name": "prod-cluster", "current": False},
+            {"name": "staging-cluster", "current": False},
+            {"name": "minikube", "current": False}
+        ]
+        return jsonify(fallback_contexts)
+
+# Add this route if you want to support switching contexts
+@app.route('/api/kube-contexts/<context_name>', methods=['POST'])
+def switch_kube_context(context_name):
+    """
+    Switches the current Kubernetes context
+    """
+    try:
+        # Switch context
+        switch_cmd = f"kubectl config use-context {context_name}"
+        subprocess.check_output(switch_cmd, shell=True)
+        
+        return jsonify({
+            "success": True,
+            "message": f"Switched to context {context_name}"
+        })
+    
+    except subprocess.CalledProcessError as e:
+        app.logger.error(f"Error switching Kubernetes context: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Failed to switch context: {str(e)}"
+        }), 500
 @app.route('/api/timeline_data')
 def get_timeline_data():
     """
