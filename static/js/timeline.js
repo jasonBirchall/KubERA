@@ -56,6 +56,63 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  function percentAlong(rangeStart, rangeEnd, t) {
+    return ((t - rangeStart) / (rangeEnd - rangeStart)) * 100;
+  }
+
+  function renderTimelineTracks(issues) {
+    const tracks = document.querySelector('.timeline-tracks');
+    tracks.innerHTML = '';
+
+    if (!issues || issues.length === 0) {
+      tracks.innerHTML = '<div style="padding:15px;color:#7e7e8f;">No issues detected</div>';
+      return;
+    }
+
+    const windowStart = Date.now() - selectedHours * 60 * 60 * 1000;
+    const windowEnd   = Date.now();
+
+    issues.forEach(issue => {
+      const track = document.createElement('div');
+      track.className = 'timeline-track';
+
+      const title = document.createElement('div');
+      title.className = 'timeline-track-title';
+      title.textContent = `${issue.name} (${issue.count})`;
+      track.appendChild(title);
+
+      if (issue.pods?.length) {
+        issue.pods.forEach(pod => {
+          const ev       = document.createElement('div');
+          const start    = new Date(pod.start).getTime();
+          const end      = pod.end ? new Date(pod.end).getTime()
+                                  : Date.now();          // still occurring
+          const leftPct  = percentAlong(windowStart, windowEnd, start);
+          const widthPct = Math.max(
+                            percentAlong(windowStart, windowEnd, end) - leftPct,
+                            0.8                                      // min width so it’s clickable
+                          );
+
+          ev.className = `timeline-event ${issue.severity || 'low'}`
+                      + (pod.end ? '' : ' ongoing');
+          ev.style.left  = `${leftPct}%`;
+          ev.style.width = `${widthPct}%`;
+          ev.title = [
+            `Pod: ${pod.name}`,
+            `Namespace: ${pod.namespace}`,
+            `Started: ${new Date(pod.start).toLocaleString()}`,
+            pod.end ? `Ended: ${new Date(pod.end).toLocaleString()}`
+                    : 'Still occurring'
+          ].join('\n');
+
+          track.appendChild(ev);
+        });
+      }
+
+      tracks.appendChild(track);
+    });
+  }
+
   // Fetch timeline data from API
   function fetchTimelineData() {
     console.log('Fetching timeline data...');
@@ -77,60 +134,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Apply any active filters
     applyFilters();
-  }
-
-  // Render timeline tracks
-  function renderTimelineTracks(issues) {
-    const tracksContainer = document.querySelector('.timeline-tracks');
-    tracksContainer.innerHTML = ''; // Clear existing tracks
-    
-    if (!issues || issues.length === 0) {
-      tracksContainer.innerHTML = '<div style="padding: 15px; color: #7e7e8f;">No issues detected in the cluster</div>';
-      return;
-    }
-    
-    // Create a track for each issue type
-    issues.forEach(issue => {
-      const track = document.createElement('div');
-      track.className = 'timeline-track';
-      
-      // Add the track title with count
-      const title = document.createElement('div');
-      title.className = 'timeline-track-title';
-      title.textContent = `${issue.name} (${issue.count})`;
-      track.appendChild(title);
-      
-      // Add events for each pod or use a predefined position
-      if (issue.pods && issue.pods.length > 0) {
-        issue.pods.forEach(pod => {
-          // Create event marker
-          const event = document.createElement('div');
-          event.className = `timeline-event ${issue.severity || 'low'}`;
-          
-          // Calculate position based on timestamp or use the provided position
-          const eventTime = new Date(pod.timestamp);
-          let positionPercent = issue.timeline_position || 50; // Default to middle if no position
-          
-          // Set position and width
-          event.style.left = `${positionPercent}%`;
-          event.style.width = '1%'; // Small fixed width
-          
-          // Add tooltip with pod info
-          event.title = `Pod: ${pod.name}\nNamespace: ${pod.namespace}\nTime: ${new Date(pod.timestamp).toLocaleString()}`;
-          
-          track.appendChild(event);
-        });
-      } else if (issue.timeline_position) {
-        // If no pods but we have a position, show a single event
-        const event = document.createElement('div');
-        event.className = `timeline-event ${issue.severity || 'low'}`;
-        event.style.left = `${issue.timeline_position}%`;
-        event.style.width = '1%';
-        track.appendChild(event);
-      }
-      
-      tracksContainer.appendChild(track);
-    });
   }
 
   // Update timeline ruler with accurate time markers

@@ -765,6 +765,7 @@
           elements.tableBody.innerHTML = `<tr><td colspan="5">Error loading data: ${error.message}</td></tr>`;
         }
       });
+    window.fetchClusterIssues = fetchClusterIssues;
   }
   
   // Function to update namespace filters with any missing namespaces

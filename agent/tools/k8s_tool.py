@@ -2,6 +2,8 @@ import subprocess
 import json
 from rich.console import Console
 import logging
+from datetime import datetime, timezone
+import dateutil.parser
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -19,6 +21,61 @@ class K8sTool:
         except subprocess.CalledProcessError as e:
             logger.error(f"Error getting namespaces: {e.output.decode()}")
             return ["default"]  # Fallback to default namespace
+
+    def failure_window(
+        self,
+        namespace: str,
+        pod_name:  str,
+        horizon:   datetime,          # ignore anything older than this
+    ) -> tuple[datetime, datetime | None]:
+        """
+        Returns (first_seen, last_seen)
+
+        • first_seen – first time *inside the window* that an event with
+          type=Warning and reason in {CrashLoopBackOff, OOMKilled, …}
+          was recorded for the pod.
+
+        • last_seen  –   • None if the pod is **currently** in a failing
+                            state (CrashLoopBackOff, ImagePullBackOff …)
+                         • otherwise, the most recent failure event time.
+
+        This lets the caller decide whether the bar on the timeline
+        should be “open‑ended”.
+        """
+        # 1. Ask Kubernetes for the pod’s warning events (JSON, sorted).
+        try:
+            ev_json = subprocess.check_output(
+                "kubectl get event "
+                f"-n {namespace} "
+                "--field-selector "
+                f"involvedObject.name={pod_name},type=Warning "
+                "-o json --sort-by=.lastTimestamp",
+                shell=True, stderr=subprocess.STDOUT,
+            )
+            events = json.loads(ev_json)["items"]
+        except subprocess.CalledProcessError:
+            events = []
+
+        # 2. Pick only recent events and find first + last.
+        first, last = None, None
+        for e in events:
+            ts = dateutil.parser.isoparse(e["lastTimestamp"])
+            if ts < horizon:
+                continue
+            if first is None:
+                first = ts
+            last = ts
+
+        if first is None:
+            # No recent failures recorded → treat "now" as both ends.
+            now = datetime.now(tz=timezone.utc)
+            return now, now
+
+        # 3. Decide if the failure is still ongoing.
+        if self.is_pod_failing(namespace, pod_name):
+            return first, None          # open‑ended
+
+        return first, last
 
     def list_broken_pods(self, namespace="default"):
         """

@@ -1,8 +1,6 @@
 from os import name
 from flask import Flask, render_template, request, jsonify
-import datetime
-import random
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import logging
 
 import subprocess
@@ -133,42 +131,37 @@ def switch_kube_context(context_name):
             "success": False,
             "message": f"Failed to switch context: {str(e)}"
         }), 500
+
+
 @app.route('/api/timeline_data')
 def get_timeline_data():
-    """
-    Return structured timeline data for K8s issues over time.
-    This is separate from the cluster_issues endpoint.
-    """
-    # Get the time range from query parameters, default to 6 hours
-    hours = request.args.get('hours', 6, type=int)
-    
-    namespace = request.args.get('namespace', 'default')
-    broken_pods = k8s_tool.list_broken_pods(namespace=namespace)
+    hours      = request.args.get('hours', 6, type=int)
+    namespace  = request.args.get('namespace', 'default')
+    horizon    = datetime.now(timezone.utc) - timedelta(hours=hours)
+
     issue_groups = {}
-    app.logger.debug(f"[DEBUG] Broken pods = {broken_pods}")
+    for pod in k8s_tool.list_broken_pods(namespace):
+        win = k8s_tool.failure_window(namespace, pod, horizon)
+        # win = (first_seen: datetime, last_seen: datetime | None)
+        first_seen, last_seen = win
+        issue     = k8s_tool.determine_issue_type(k8s_tool.gather_metadata(namespace, pod))
+        severity  = k8s_tool.determine_severity(issue)
 
-    for pod_name in broken_pods:
-        metadata = k8s_tool.gather_metadata(namespace, pod_name)
-        issue_type = k8s_tool.determine_issue_type(metadata)
-        severity = k8s_tool.determine_severity(issue_type)
-
-        if issue_type not in issue_groups:
-            issue_groups[issue_type] = {
-                "name": issue_type,
-                "severity": severity,
-                "pods": [],
-                "count": 0,
-                "timeline_position": random.randint(10, 90)  # Random position for demo
-            }
-
-        issue_groups[issue_type]["pods"].append({
-            "name": pod_name,
-            "namespace": namespace,
-            "timestamp": datetime.now().isoformat()
+        grp = issue_groups.setdefault(issue, {
+            "name":     issue,
+            "severity": severity,
+            "pods":     [],
+            "count":    0
         })
-        issue_groups[issue_type]["count"] += 1
 
-    app.logger.debug(f"[DEBUG] Timeline data = {issue_groups}")
+        grp["pods"].append({
+            "name":      pod,
+            "namespace": namespace,
+            "start":     first_seen.isoformat(),
+            "end":       None if last_seen is None else last_seen.isoformat()  # None → still occurring
+        })
+        grp["count"] += 1
+
     return jsonify(list(issue_groups.values()))
 
 @app.route('/api/cluster_issues')
