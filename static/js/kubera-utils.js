@@ -19,6 +19,10 @@ const KuberaUtils = (function() {
 
   // DOM elements cache
   let elements = {};
+  
+  // Initialization flags
+  let initialized = false;
+  let dropdownsInitialized = false;
 
   // Configure auto-refresh
   let refreshInterval;
@@ -215,6 +219,75 @@ const KuberaUtils = (function() {
       }
     }
   }
+  
+  // Initialize dropdowns (time range, cluster)
+  function initializeDropdowns(refreshCallback) {
+    if (dropdownsInitialized) return;
+    
+    // Time range dropdown handling
+    const timeRangeButton = document.getElementById('timeRangeButton');
+    const timeRangeDropdown = document.getElementById('timeRangeDropdown');
+    
+    if (timeRangeButton && timeRangeDropdown) {
+      // Set initial text
+      timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last ${state.selectedHours} hrs ▾`;
+      
+      // Set active item
+      const defaultItem = timeRangeDropdown.querySelector(`[data-hours="${state.selectedHours}"]`);
+      if (defaultItem) {
+        defaultItem.classList.add('active');
+      }
+      
+      // Toggle dropdown
+      timeRangeButton.addEventListener('click', () => {
+        timeRangeDropdown.style.display = (timeRangeDropdown.style.display === 'none' || !timeRangeDropdown.style.display) 
+          ? 'block' 
+          : 'none';
+      });
+      
+      // Handle dropdown item selection
+      timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(item => {
+        item.addEventListener('click', function() {
+          // Remove active from all
+          timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('active'));
+          
+          // Set new active item
+          this.classList.add('active');
+          
+          // Update selected hours and UI
+          state.selectedHours = parseInt(this.getAttribute('data-hours'), 10);
+          timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last ${state.selectedHours} hrs ▾`;
+          timeRangeDropdown.style.display = 'none';
+          
+          // Call refresh callback if provided
+          if (refreshCallback && typeof refreshCallback === 'function') {
+            refreshCallback();
+          }
+        });
+      });
+      
+      // Hide dropdown if clicked elsewhere
+      document.addEventListener('click', (event) => {
+        if (!timeRangeButton.contains(event.target) && !timeRangeDropdown.contains(event.target)) {
+          timeRangeDropdown.style.display = 'none';
+        }
+      });
+    }
+    
+    // Mark as initialized
+    dropdownsInitialized = true;
+  }
+  
+  // Initialize utility module
+  function initialize(refreshCallback) {
+    if (initialized) return;
+    
+    // Initialize dropdowns
+    initializeDropdowns(refreshCallback);
+    
+    // Mark as initialized
+    initialized = true;
+  }
 
   // Public API
   return {
@@ -231,7 +304,9 @@ const KuberaUtils = (function() {
     updateTimelineRuler,
     startAutoRefresh,
     stopAutoRefresh,
-    clearSearchFilter
+    clearSearchFilter,
+    initialize,
+    initializeDropdowns
   };
 })();
 

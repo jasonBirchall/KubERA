@@ -11,6 +11,9 @@
     // Cache DOM elements
     cacheElements();
     
+    // Initialize KuberaUtils with refresh callback
+    KuberaUtils.initialize(refreshData);
+    
     // Set up event listeners
     setupEventListeners();
     
@@ -169,36 +172,7 @@
       });
     }
     
-    // Time range dropdown
-    if (elements.timeRangeButton && elements.timeRangeDropdown) {
-      elements.timeRangeButton.addEventListener('click', () => {
-        elements.timeRangeDropdown.style.display = (elements.timeRangeDropdown.style.display === 'none') ? 'block' : 'none';
-      });
-      
-      elements.timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(item => {
-        item.addEventListener('click', function () {
-          // Remove active from all
-          elements.timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('active'));
-          
-          // Set new active item
-          this.classList.add('active');
-          
-          // Update selected hours and UI
-          state.selectedHours = parseInt(this.getAttribute('data-hours'), 10);
-          elements.timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last ${state.selectedHours} hrs ▾`;
-          elements.timeRangeDropdown.style.display = 'none';
-          
-          refreshData();
-        });
-      });
-      
-      // Hide dropdown if clicked elsewhere
-      document.addEventListener('click', (event) => {
-        if (!elements.timeRangeButton.contains(event.target) && !elements.timeRangeDropdown.contains(event.target)) {
-          elements.timeRangeDropdown.style.display = 'none';
-        }
-      });
-    }
+    // Time range dropdown is now handled by KuberaUtils
     
     // Filter tag clicks
     elements.filterTags.forEach(tag => {

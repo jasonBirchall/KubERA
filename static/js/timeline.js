@@ -22,15 +22,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Initialize timeline component
   function init() {
-    // Set default values
-    timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last ${state.selectedHours} hrs ▾`;
-
-    // Highlight default item in time range dropdown
-    const defaultItem = timeRangeDropdown?.querySelector(`[data-hours="${state.selectedHours}"]`);
-    if (defaultItem) {
-      defaultItem.classList.add('active');
-    }
-
+    // Initialize KuberaUtils if not already initialized by dashboard.js
+    KuberaUtils.initialize(fetchData);
+    
     // Set up event listeners
     setupEventListeners();
     
@@ -182,41 +176,7 @@ document.addEventListener('DOMContentLoaded', function() {
       refreshTimelineButton.addEventListener('click', fetchData);
     }
     
-    // Handle time range dropdown
-    if (timeRangeButton && timeRangeDropdown) {
-      timeRangeButton.addEventListener('click', function() {
-        timeRangeDropdown.style.display = 
-          timeRangeDropdown.style.display === 'block' ? 'none' : 'block';
-      });
-      
-      timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(item => {
-        item.addEventListener('click', function() {
-          // Update active class
-          timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(i => 
-            i.classList.remove('active')
-          );
-          this.classList.add('active');
-          
-          // Update hour setting and button text
-          state.selectedHours = parseInt(this.getAttribute('data-hours'), 10);
-          timeRangeButton.innerHTML = 
-            `<i class="fas fa-clock btn-icon"></i> Last ${state.selectedHours} hrs ▾`;
-          
-          // Hide dropdown
-          timeRangeDropdown.style.display = 'none';
-          
-          // Refresh data
-          fetchData();
-        });
-      });
-      
-      // Close dropdown when clicking elsewhere
-      document.addEventListener('click', function(e) {
-        if (!timeRangeButton.contains(e.target) && !timeRangeDropdown.contains(e.target)) {
-          timeRangeDropdown.style.display = 'none';
-        }
-      });
-    }
+    // Time range dropdown is now handled by KuberaUtils
   }
 
   // Start initialization
