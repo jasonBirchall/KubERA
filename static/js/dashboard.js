@@ -11,6 +11,7 @@
     individualEvents: [], // Filtered data
     activeTab: 'grouped', // Default active tab
     activeNamespace: 'All', // Default namespace filter
+    activePriority: 'All', // Default priority filter
     currentCluster: '', // Current selected cluster
     showingAllNamespaces: false, // Whether we're showing all namespaces or just the first few
     selectedHours: 6 // Default time range
@@ -19,6 +20,7 @@
   // DOM elements
   const elements = {
     namespaceTags: null, // Will be populated after render
+    priorityTags: null, // Will be populated after render
     groupedEventsTab: null,
     eventStreamTab: null, 
     tableBody: null,
@@ -29,6 +31,7 @@
     timeRangeButton: null,
     timeRangeDropdown: null,
     namespaceFilterTags: null,
+    priorityFilterTags: null,
     refreshTimelineButton: null
   };
 
@@ -62,6 +65,7 @@
     elements.timeRangeButton = document.getElementById('timeRangeButton');
     elements.timeRangeDropdown = document.getElementById('timeRangeDropdown');
     elements.namespaceFilterTags = document.getElementById('namespaceFilterTags');
+    elements.priorityFilterTags = document.querySelector('.filter-section:nth-child(4) .filter-tags');
     elements.refreshTimelineButton = document.getElementById('refreshTimelineButton');
     
     // All filter tags
@@ -135,8 +139,11 @@
         const filterSection = this.closest('.filter-section');
         if (!filterSection) return;
         
-        // Handle namespace filter differently
-        if (filterSection.querySelector('.filter-title').textContent === 'Namespace') {
+        // Get the filter title to determine which filter this is
+        const filterTitle = filterSection.querySelector('.filter-title').textContent;
+        
+        // Handle namespace filter 
+        if (filterTitle === 'Namespace') {
           elements.namespaceTags.forEach(t => {
             t.classList.remove('active');
             t.style.color = '#d8d9da';
@@ -148,7 +155,25 @@
           this.style.color = 'white';
           
           state.activeNamespace = this.textContent;
-        } else {
+        } 
+        // Handle priority filter
+        else if (filterTitle === 'Priority') {
+          // First reset all priority tags
+          filterSection.querySelectorAll('.filter-tag').forEach(t => {
+            t.classList.remove('active');
+            t.style.color = '#d8d9da';
+            t.style.backgroundColor = '#2a2a36';
+          });
+          
+          // Set the active tag
+          this.classList.add('active');
+          this.style.backgroundColor = '#3872f2';
+          this.style.color = 'white';
+          
+          // Update state
+          state.activePriority = this.textContent;
+        } 
+        else {
           // For other filters, just toggle the active class on this section
           const siblings = Array.from(this.parentNode.children);
           siblings.forEach(sibling => sibling.classList.remove('active'));
@@ -281,6 +306,27 @@
     renderNamespaceSet(state.showingAllNamespaces);
   }
 
+  // Set up priority filter
+  function setupPriorityFilter() {
+    if (!elements.priorityFilterTags) return;
+    
+    // Get all priority tags
+    elements.priorityTags = elements.priorityFilterTags.querySelectorAll('.filter-tag');
+    
+    // For each priority tag, set the initial styling
+    elements.priorityTags.forEach(tag => {
+      if (tag.textContent === state.activePriority) {
+        tag.classList.add('active');
+        tag.style.backgroundColor = '#3872f2';
+        tag.style.color = 'white';
+      } else {
+        tag.classList.remove('active');
+        tag.style.color = '#d8d9da';
+        tag.style.backgroundColor = '#2a2a36';
+      }
+    });
+  }
+
   // Fetch available Kubernetes contexts
   function fetchKubeContexts() {
     fetch('/api/kube-contexts')
@@ -377,20 +423,21 @@
 
   // Filter data based on active filters
   function applyFilters() {
-    if (state.activeNamespace === 'All') {
-      // No filtering needed, use all data
-      state.groupedEvents = state.allGroupedEvents;
-      state.individualEvents = state.allIndividualEvents;
-    } else {
-      // Filter individual events first
-      state.individualEvents = state.allIndividualEvents.filter(event => 
+    // Starting with all data
+    let filteredGroupEvents = [...state.allGroupedEvents];
+    let filteredIndividualEvents = [...state.allIndividualEvents];
+    
+    // Apply namespace filter
+    if (state.activeNamespace !== 'All') {
+      // Filter individual events by namespace
+      filteredIndividualEvents = filteredIndividualEvents.filter(event => 
         event.namespace === state.activeNamespace
       );
       
       // Then recreate grouped events based on filtered individual events
       const groupMap = {};
       
-      state.individualEvents.forEach(event => {
+      filteredIndividualEvents.forEach(event => {
         if (!groupMap[event.alertType]) {
           // Find the original group to get its severity
           const originalGroup = state.allGroupedEvents.find(g => g.name === event.alertType);
@@ -412,8 +459,27 @@
         groupMap[event.alertType].count++;
       });
       
-      state.groupedEvents = Object.values(groupMap);
+      filteredGroupEvents = Object.values(groupMap);
     }
+    
+    // Apply priority filter
+    if (state.activePriority !== 'All') {
+      const priorityLower = state.activePriority.toLowerCase();
+      
+      // Filter groups by priority/severity
+      filteredGroupEvents = filteredGroupEvents.filter(group => 
+        group.severity === priorityLower
+      );
+      
+      // Filter individual events by priority/severity
+      filteredIndividualEvents = filteredIndividualEvents.filter(event => 
+        event.severity === priorityLower
+      );
+    }
+    
+    // Update the filtered state
+    state.groupedEvents = filteredGroupEvents;
+    state.individualEvents = filteredIndividualEvents;
     
     // Update tab labels with filtered counts
     elements.groupedEventsTab.textContent = `Grouped Events (${state.groupedEvents.length})`;
@@ -425,6 +491,9 @@
     } else {
       renderEventStream();
     }
+    
+    // Update timeline with filtered data
+    renderTimelineTracks(state.groupedEvents);
   }
 
   // Function to render grouped events
@@ -560,6 +629,9 @@
         // Update namespace filter tags if they're missing any namespaces
         // This ensures all available namespaces show in the filter
         updateNamespaceFilters(namespaces);
+        
+        // Set up priority filter
+        setupPriorityFilter();
         
         // Apply initial filters (which defaults to "All")
         applyFilters();
@@ -791,6 +863,6 @@ function renderAnalysis(data) {
       </div>
     `;
   });
+}
   
   content.innerHTML = html;
-}

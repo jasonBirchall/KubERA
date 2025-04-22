@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const filterTags = document.querySelectorAll('.filter-tag');
 
   let selectedHours = 6; // default time range
+  let activePriority = 'All'; // default priority filter
 
   const timeRangeButton = document.getElementById('timeRangeButton');
   const timeRangeDropdown = document.getElementById('timeRangeDropdown');
@@ -63,8 +64,6 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(data => {
         timelineData = data;
         console.log('Timeline data received:', timelineData);
-        renderTimelineTracks(timelineData);
-        updateTimelineRuler();
         processTimelineData();
       })
       .catch(error => {
@@ -182,9 +181,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Render filtered data
     renderTimelineTracks(filteredData);
-    
-    // Update the events table to match
-    fetchClusterIssues();
+    updateTimelineRuler();
   }
   
   // Auto-refresh functionality
@@ -205,12 +202,32 @@ document.addEventListener('DOMContentLoaded', function() {
   // Handle filter tag clicks
   filterTags.forEach(tag => {
     tag.addEventListener('click', function() {
-      // Remove active class from siblings
-      const siblings = Array.from(this.parentNode.children);
-      siblings.forEach(sibling => sibling.classList.remove('active'));
+      // Get parent filter section
+      const filterSection = this.closest('.filter-section');
+      if (!filterSection) return;
       
-      // Add active class to clicked tag
-      this.classList.add('active');
+      // Get the filter title to identify which filter this is
+      const filterTitle = filterSection.querySelector('.filter-title').textContent;
+      
+      // Handle different filters
+      if (filterTitle === 'Priority') {
+        // Remove active class from all priority tags
+        filterSection.querySelectorAll('.filter-tag').forEach(t => {
+          t.classList.remove('active');
+          t.style.color = '#d8d9da';
+          t.style.backgroundColor = '#2a2a36';
+        });
+        
+        // Activate the clicked tag
+        this.classList.add('active');
+        this.style.backgroundColor = '#3872f2';
+        this.style.color = 'white';
+      } else {
+        // For other filters, just toggle the active class
+        const siblings = Array.from(this.parentNode.children);
+        siblings.forEach(sibling => sibling.classList.remove('active'));
+        this.classList.add('active');
+      }
       
       // Apply filters
       applyFilters();
@@ -262,5 +279,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Initialize timeline
   fetchTimelineData();
+  updateTimelineRuler();
   startAutoRefresh();
 });
