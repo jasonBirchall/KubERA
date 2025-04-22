@@ -14,7 +14,8 @@
     activePriority: 'All', // Default priority filter
     currentCluster: '', // Current selected cluster
     showingAllNamespaces: false, // Whether we're showing all namespaces or just the first few
-    selectedHours: 6 // Default time range
+    selectedHours: 6, // Default time range
+    filterTerm: ''
   };
 
   // DOM elements
@@ -69,9 +70,86 @@
     elements.refreshTimelineButton = document.getElementById('refreshTimelineButton');
     
     // All filter tags
+    elements.filterInput = document.querySelector('.filter-input');
+    elements.clearSearchBtn = document.getElementById('clearSearchBtn');
     elements.filterTags = document.querySelectorAll('.filter-tag');
   }
 
+  function applySearchFilter(searchTerm) {
+    if (!searchTerm) {
+      // If search term is empty, just apply regular filters
+      applyFilters();
+      return;
+    }
+    
+    // Starting with filtered data from regular filters
+    let filteredGroupEvents;
+    let filteredIndividualEvents;
+    
+    // Apply namespace and priority filters first
+    if (state.activeNamespace !== 'All' || state.activePriority !== 'All') {
+      // If other filters are active, start with that filtered set
+      filteredGroupEvents = [...state.groupedEvents];
+      filteredIndividualEvents = [...state.individualEvents];
+    } else {
+      // Otherwise start with all data
+      filteredGroupEvents = [...state.allGroupedEvents];
+      filteredIndividualEvents = [...state.allIndividualEvents];
+    }
+    
+    // Apply search term filter to grouped events
+    filteredGroupEvents = filteredGroupEvents.filter(group => {
+      // Search in name
+      if (group.name.toLowerCase().includes(searchTerm)) {
+        return true;
+      }
+      
+      // Search in pods
+      if (group.pods && group.pods.length > 0) {
+        return group.pods.some(pod => 
+          pod.name.toLowerCase().includes(searchTerm) || 
+          pod.namespace.toLowerCase().includes(searchTerm)
+        );
+      }
+      
+      return false;
+    });
+    
+    // Apply search term filter to individual events
+    filteredIndividualEvents = filteredIndividualEvents.filter(event => 
+      event.alertType.toLowerCase().includes(searchTerm) ||
+      event.pod.toLowerCase().includes(searchTerm) ||
+      event.namespace.toLowerCase().includes(searchTerm)
+    );
+    
+    // Update the state
+    state.groupedEvents = filteredGroupEvents;
+    state.individualEvents = filteredIndividualEvents;
+    
+    // Update tab labels with filtered counts
+    elements.groupedEventsTab.textContent = `Grouped Events (${state.groupedEvents.length})`;
+    elements.eventStreamTab.textContent = `Event Stream (${state.individualEvents.length})`;
+    
+    // Re-render the current view
+    if (state.activeTab === 'grouped') {
+      renderGroupedEvents();
+    } else {
+      renderEventStream();
+    }
+    
+    // Update timeline with filtered data
+    renderTimelineTracks(state.groupedEvents);
+  }
+
+  function clearSearchFilter() {
+    if (elements.filterInput) {
+      elements.filterInput.value = '';
+      state.filterTerm = '';
+      elements.filterInput.classList.remove('filter-active');
+      elements.clearSearchBtn.style.display = 'none';
+      applyFilters(); // Reset to normal filters
+    }
+  }
   // Set up event listeners
   function setupEventListeners() {
     // Tab switching
@@ -191,6 +269,45 @@
         fetchTimelineData();
         fetchClusterIssues();
       });
+    }
+    // Filter input event listeners
+    if (elements.filterInput) {
+      // Focus on '/' key press
+      document.addEventListener('keydown', function(event) {
+        if (event.key === '/' && document.activeElement !== elements.filterInput) {
+          event.preventDefault();
+          elements.filterInput.focus();
+        }
+      });
+      
+      // Handle input changes
+      elements.filterInput.addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase().trim();
+        state.filterTerm = searchTerm;
+        
+        // Show/hide clear button
+        if (searchTerm.length > 0) {
+          elements.clearSearchBtn.style.display = 'block';
+          elements.filterInput.classList.add('filter-active');
+        } else {
+          elements.clearSearchBtn.style.display = 'none';
+          elements.filterInput.classList.remove('filter-active');
+        }
+        
+        applySearchFilter(searchTerm);
+      });
+      
+      // Clear on Escape key
+      elements.filterInput.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+          clearSearchFilter();
+        }
+      });
+    }
+    
+    // Clear button click
+    if (elements.clearSearchBtn) {
+      elements.clearSearchBtn.addEventListener('click', clearSearchFilter);
     }
   }
 
@@ -481,6 +598,12 @@
     state.groupedEvents = filteredGroupEvents;
     state.individualEvents = filteredIndividualEvents;
     
+    const searchTerm = elements.filterInput?.value.toLowerCase().trim();
+    if (searchTerm) {
+      applySearchFilter(searchTerm);
+      return;
+    }
+
     // Update tab labels with filtered counts
     elements.groupedEventsTab.textContent = `Grouped Events (${state.groupedEvents.length})`;
     elements.eventStreamTab.textContent = `Event Stream (${state.individualEvents.length})`;

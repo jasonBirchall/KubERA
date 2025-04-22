@@ -72,7 +72,18 @@
       <!-- Filter sections -->
       <div class="filter-section">
         <div class="filter-title">Filters</div>
-        <input type="text" class="filter-input" placeholder="Type / to search">
+        <div class="search-input-container" style="position: relative;">
+          <input type="text" class="filter-input" placeholder="Type / to search" id="globalFilterInput">
+          <span class="search-icon" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #7e7e8f;">
+            <i class="fas fa-search"></i>
+          </span>
+          <button class="clear-search" id="clearSearchBtn" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #7e7e8f; cursor: pointer; display: none;">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="filter-hint" style="font-size: 11px; color: #7e7e8f; margin-top: 4px;">
+          Search alerts, pods, and namespaces. Press "/" to focus.
+        </div>
       </div>
       <div class="filter-section">
         <div class="filter-title">Namespace</div>

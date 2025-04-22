@@ -529,3 +529,56 @@ body {
   color: #7e7e8f;
   font-style: italic;
 }
+
+/* Filter input and search styles */
+.search-input-container {
+  position: relative;
+  margin-bottom: 6px;
+}
+
+.filter-input {
+  width: 100%;
+  background-color: #111217;
+  border: 1px solid #2c2c35;
+  color: #d8d9da;
+  padding: 8px 30px; /* Extra padding for icons */
+  border-radius: 3px;
+  font-size: 13px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: #3872f2;
+  box-shadow: 0 0 0 1px rgba(56, 114, 242, 0.3);
+}
+
+.filter-input::placeholder {
+  color: #7e7e8f;
+}
+
+.clear-search {
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.clear-search:hover {
+  opacity: 1;
+}
+
+.filter-hint {
+  margin-bottom: 10px;
+}
+
+/* Highlight for matches in the event table */
+.highlight-match {
+  background-color: rgba(56, 114, 242, 0.3);
+  border-radius: 2px;
+  padding: 1px 2px;
+}
+
+/* Visual cue when filter is active */
+.filter-active {
+  border: 1px solid #3872f2;
+  background-color: rgba(56, 114, 242, 0.05);
+}
