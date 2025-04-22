@@ -17,6 +17,7 @@ dependencies = [
   "psycopg2-binary>=2.9.10",
   "python-dateutil>=2.9.0.post0",
   "rich>=14.0.0",
+  "sqlalchemy>=2.0.40",
   "statsmodels>=0.14.4",
   "streamlit>=1.44.1",
 ]

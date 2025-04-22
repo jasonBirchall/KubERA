@@ -194,7 +194,11 @@
           elements.timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last ${state.selectedHours} hrs ▾`;
           elements.timeRangeDropdown.style.display = 'none';
           
-          fetchTimelineData();
+          if (state.selectedHours <= 6) {
+            fetchTimelineData();
+          } else {
+            fetchTimelineHistory();
+          }
           fetchClusterIssues();
         });
       });
@@ -309,6 +313,16 @@
     if (elements.clearSearchBtn) {
       elements.clearSearchBtn.addEventListener('click', clearSearchFilter);
     }
+  }
+
+  function fetchTimelineHistory() {
+    fetch(`/api/timeline_history?hours=${state.selectedHours}`)
+      .then(r => r.json())
+      .then(data => {
+        renderTimelineTracks(data);
+        updateTimelineRuler();
+      })
+      .catch(err => console.error('Error fetching timeline history:', err));
   }
 
   // Function to fetch namespaces
@@ -853,7 +867,7 @@
           
           // Calculate position based on timestamp or use the provided position
           const eventTime = new Date(pod.timestamp);
-          let positionPercent = issue.timeline_position || 50; // Default to middle if no position
+          let positionPercent = issue.timeline_position; // Default to middle if no position
           
           // Set position and width
           event.style.left = `${positionPercent}%`;

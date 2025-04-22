@@ -25,36 +25,11 @@ document.addEventListener('DOMContentLoaded', function() {
     defaultItem.classList.add('active');
   }
 
-  if (timeRangeButton && timeRangeDropdown) {
-    timeRangeButton.addEventListener('click', () => {
-      timeRangeDropdown.style.display = (timeRangeDropdown.style.display === 'none') ? 'block' : 'none';
-    });
-
-    timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(item => {
-      item.addEventListener('click', function () {
-        // Remove active from all
-        timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('active'));
-        
-        // Set new active item
-        this.classList.add('active');
-
-        // Update selected hours and UI
-        selectedHours = parseInt(this.getAttribute('data-hours'), 10);
-        timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last ${selectedHours} hrs ▾`;
-        timeRangeDropdown.style.display = 'none';
-
-        fetchTimelineData();
-        fetchClusterIssues();
-      });
-    });
-
-    // Hide dropdown if clicked elsewhere
-    document.addEventListener('click', (event) => {
-      if (!timeRangeButton.contains(event.target) && !timeRangeDropdown.contains(event.target)) {
-        timeRangeDropdown.style.display = 'none';
-      }
-    });
+  if (window.renderTimelineTracksAlreadyLoaded) {
+    console.debug("Skipping legacy timeline.js");
+    return;
   }
+  window.renderTimelineTracksAlreadyLoaded = true;
 
   function percentAlong(rangeStart, rangeEnd, t) {
     return ((t - rangeStart) / (rangeEnd - rangeStart)) * 100;

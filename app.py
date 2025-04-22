@@ -2,16 +2,19 @@ from os import name
 from flask import Flask, render_template, request, jsonify
 from datetime import datetime, timedelta, timezone
 import logging
+from sqlalchemy import text
 
 import subprocess
 from agent.tools.k8s_tool import K8sTool
 from agent.llm_agent import LlmAgent
+from db import init_db, record_failure, engine
     
 
 k8s_tool = K8sTool()
 llm_agent = LlmAgent()
     
 app = Flask(__name__)
+init_db()
 app.logger.setLevel(logging.DEBUG)
 
 def determine_issue_type(pod_metadata):
@@ -143,7 +146,7 @@ def get_timeline_data():
     for pod in k8s_tool.list_broken_pods(namespace):
         win = k8s_tool.failure_window(namespace, pod, horizon)
         # win = (first_seen: datetime, last_seen: datetime | None)
-        first_seen, last_seen = win
+        first_seen, last_seen = k8s_tool.failure_window(namespace, pod, horizon)
         issue     = k8s_tool.determine_issue_type(k8s_tool.gather_metadata(namespace, pod))
         severity  = k8s_tool.determine_severity(issue)
 
@@ -159,6 +162,45 @@ def get_timeline_data():
             "namespace": namespace,
             "start":     first_seen.isoformat(),
             "end":       None if last_seen is None else last_seen.isoformat()  # None → still occurring
+        })
+        grp["count"] += 1
+
+        record_failure(namespace, pod, issue, severity, first_seen, last_seen)
+
+    return jsonify(list(issue_groups.values()))
+
+@app.route('/api/timeline_history')
+def timeline_history():
+    hours  = request.args.get('hours', 24, type=int)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    # ---- open a connection and run the query ----
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT namespace, pod_name, issue_type, severity,
+                       first_seen, last_seen
+                  FROM pod_alerts
+                 WHERE first_seen >= :cutoff
+                    OR last_seen IS NULL
+            """),
+            {"cutoff": cutoff.isoformat()}
+        ).mappings().all()          # .mappings() → rows as dict‑like objects
+
+    # ---- build the response exactly as before ----
+    issue_groups = {}
+    for r in rows:
+        grp = issue_groups.setdefault(r["issue_type"], {
+            "name":     r["issue_type"],
+            "severity": r["severity"],
+            "pods":     [],
+            "count":    0
+        })
+        grp["pods"].append({
+            "name":      r["pod_name"],
+            "namespace": r["namespace"],
+            "start":     r["first_seen"],
+            "end":       r["last_seen"]
         })
         grp["count"] += 1
 
