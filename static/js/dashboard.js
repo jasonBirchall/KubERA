@@ -863,6 +863,6 @@ function renderAnalysis(data) {
       </div>
     `;
   });
-}
   
   content.innerHTML = html;
+}
