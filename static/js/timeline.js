@@ -1,132 +1,70 @@
+// Kubera Timeline Component
+// Simplified version that uses the shared utility functions
+
 document.addEventListener('DOMContentLoaded', function() {
-  // Initialize variables
-  let timelineData = [];
-  let filteredData = [];
-  let timeRange = {
-    start: new Date(Date.now() - 6 * 60 * 60 * 1000), // 6 hours ago
-    end: new Date() // now
-  };
+  // Use the shared state from KuberaUtils
+  const state = KuberaUtils.state;
   
-  // DOM elements
+  // Initialize local DOM elements
   const presetSelector = document.getElementById('presetSelector');
   const analysisPanel = document.getElementById('analysisPanel');
   const filterTags = document.querySelectorAll('.filter-tag');
-
-  let selectedHours = 6; // default time range
-  let activePriority = 'All'; // default priority filter
-
+  const refreshTimelineButton = document.getElementById('refreshTimelineButton');
   const timeRangeButton = document.getElementById('timeRangeButton');
   const timeRangeDropdown = document.getElementById('timeRangeDropdown');
-  timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last ${selectedHours} hrs ▾`;
 
-  // Highlight default item (6 hours)
-  const defaultItem = timeRangeDropdown.querySelector(`[data-hours="${selectedHours}"]`);
-  if (defaultItem) {
-    defaultItem.classList.add('active');
-  }
-
-  if (window.renderTimelineTracksAlreadyLoaded) {
-    console.debug("Skipping legacy timeline.js");
+  // Skip initialization if already loaded by dashboard.js
+  if (window.kuberaTimelineInitialized) {
+    console.debug("Skipping timeline.js initialization as it's already loaded");
     return;
   }
-  window.renderTimelineTracksAlreadyLoaded = true;
+  window.kuberaTimelineInitialized = true;
 
-  function percentAlong(rangeStart, rangeEnd, t) {
-    return ((t - rangeStart) / (rangeEnd - rangeStart)) * 100;
-  }
+  // Initialize timeline component
+  function init() {
+    // Set default values
+    timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last ${state.selectedHours} hrs ▾`;
 
-  function renderTimelineTracks(issues) {
-    const tracks = document.querySelector('.timeline-tracks');
-    tracks.innerHTML = '';
-
-    if (!issues || issues.length === 0) {
-      tracks.innerHTML = '<div style="padding:15px;color:#7e7e8f;">No issues detected</div>';
-      return;
+    // Highlight default item in time range dropdown
+    const defaultItem = timeRangeDropdown?.querySelector(`[data-hours="${state.selectedHours}"]`);
+    if (defaultItem) {
+      defaultItem.classList.add('active');
     }
 
-    const windowStart = Date.now() - selectedHours * 60 * 60 * 1000;
-    const windowEnd   = Date.now();
-
-    issues.forEach(issue => {
-      const track = document.createElement('div');
-      track.className = 'timeline-track';
-
-      const title = document.createElement('div');
-      title.className = 'timeline-track-title';
-      title.textContent = `${issue.name} (${issue.count})`;
-      track.appendChild(title);
-
-      if (issue.pods?.length) {
-        issue.pods.forEach(pod => {
-          const ev       = document.createElement('div');
-          const start    = new Date(pod.start).getTime();
-          const end      = pod.end ? new Date(pod.end).getTime()
-                                  : Date.now();          // still occurring
-          const leftPct  = percentAlong(windowStart, windowEnd, start);
-          const widthPct = Math.max(
-                            percentAlong(windowStart, windowEnd, end) - leftPct,
-                            0.8                                      // min width so it’s clickable
-                          );
-
-          ev.className = `timeline-event ${issue.severity || 'low'}`
-                      + (pod.end ? '' : ' ongoing');
-          ev.style.left  = `${leftPct}%`;
-          ev.style.width = `${widthPct}%`;
-          ev.title = [
-            `Pod: ${pod.name}`,
-            `Namespace: ${pod.namespace}`,
-            `Started: ${new Date(pod.start).toLocaleString()}`,
-            pod.end ? `Ended: ${new Date(pod.end).toLocaleString()}`
-                    : 'Still occurring'
-          ].join('\n');
-
-          track.appendChild(ev);
-        });
-      }
-
-      tracks.appendChild(track);
-    });
-  }
-
-  // Fetch timeline data from API
-  function fetchTimelineData() {
-    console.log('Fetching timeline data...');
-    fetch(`/api/timeline_data?hours=${selectedHours}`)
-      .then(response => response.json())
-      .then(data => {
-        timelineData = data;
-        console.log('Timeline data received:', timelineData);
-        processTimelineData();
-      })
-      .catch(error => {
-        console.error('Error fetching timeline data:', error);
-      });
-  }
-  
-  // Process timeline data
-  function processTimelineData() {
-    console.log('Processing timeline data...');
+    // Set up event listeners
+    setupEventListeners();
     
-    // Apply any active filters
-    applyFilters();
+    // Fetch initial data
+    fetchData();
+    
+    // Start auto-refresh
+    KuberaUtils.startAutoRefresh(fetchData);
   }
 
-  // Update timeline ruler with accurate time markers
-  function updateTimelineRuler() {
-    const ruler = document.querySelector('.timeline-ruler');
-    ruler.innerHTML = '';
-
-    const segments = 7;
-    for (let i = 0; i < segments; i++) {
-      const marker = document.createElement('div');
-      const time = new Date(Date.now() - (selectedHours * 60 * 60 * 1000) + (i * selectedHours * 60 * 60 * 1000 / (segments - 1)));
-      marker.textContent = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      ruler.appendChild(marker);
+  // Fetch all needed data
+  function fetchData() {
+    // Determine which timeline endpoint to use based on hours
+    if (state.selectedHours <= 6) {
+      KuberaUtils.fetchTimelineData()
+        .then(data => {
+          KuberaUtils.renderTimelineTracks(data);
+          KuberaUtils.updateTimelineRuler();
+          applyFilters(data);
+        });
+    } else {
+      KuberaUtils.fetchTimelineHistory()
+        .then(data => {
+          KuberaUtils.renderTimelineTracks(data);
+          KuberaUtils.updateTimelineRuler();
+          applyFilters(data);
+        });
     }
   }
 
   // Apply filters to timeline data
-  function applyFilters() {
+  function applyFilters(data) {
+    if (!data) return;
+    
     // Get active filters
     const activeApp = document.querySelector('.filter-section:nth-child(2) .filter-tag.active')?.textContent;
     const activeAlert = document.querySelector('.filter-section:nth-child(3) .filter-tag.active')?.textContent;
@@ -136,7 +74,7 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Active filters:', { activeApp, activeAlert, activePriority, activeSource });
     
     // Filter the timeline data
-    filteredData = timelineData.filter(item => {
+    const filteredData = data.filter(item => {
       // If namespace filter is not "All", filter by namespace
       if (activeApp && activeApp !== "All") {
         // Check if any pod in this item is in the selected namespace
@@ -158,105 +96,129 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Render filtered data
-    renderTimelineTracks(filteredData);
-    updateTimelineRuler();
+    KuberaUtils.renderTimelineTracks(filteredData);
   }
-  
-  // Auto-refresh functionality
-  let refreshInterval;
 
-  function startAutoRefresh(intervalSeconds = 30) {
-    if (refreshInterval) {
-      clearInterval(refreshInterval);
+  // Set up event listeners
+  function setupEventListeners() {
+    // Handle filter tag clicks
+    filterTags.forEach(tag => {
+      tag.addEventListener('click', function() {
+        // Get parent filter section
+        const filterSection = this.closest('.filter-section');
+        if (!filterSection) return;
+        
+        // Get the filter title to identify which filter this is
+        const filterTitle = filterSection.querySelector('.filter-title').textContent;
+        
+        // Handle different filters
+        if (filterTitle === 'Priority') {
+          // Remove active class from all priority tags
+          filterSection.querySelectorAll('.filter-tag').forEach(t => {
+            t.classList.remove('active');
+            t.style.color = '#d8d9da';
+            t.style.backgroundColor = '#2a2a36';
+          });
+          
+          // Activate the clicked tag
+          this.classList.add('active');
+          this.style.backgroundColor = '#3872f2';
+          this.style.color = 'white';
+          
+          // Store in shared state
+          state.activePriority = this.textContent;
+        } else {
+          // For other filters, just toggle the active class
+          const siblings = Array.from(this.parentNode.children);
+          siblings.forEach(sibling => sibling.classList.remove('active'));
+          this.classList.add('active');
+        }
+        
+        // Re-fetch and apply filters
+        fetchData();
+      });
+    });
+    
+    // Handle preset selector change if present
+    if (presetSelector) {
+      presetSelector.addEventListener('change', function() {
+        const preset = this.value;
+        console.log('Selected preset:', preset);
+        
+        // Apply preset filters
+        switch (preset) {
+          case 'high-priority':
+            // Select 'High' priority filter
+            const highPriorityTag = document.querySelector('.filter-section:nth-child(4) .filter-tag:nth-child(2)');
+            if (highPriorityTag) {
+              highPriorityTag.click();
+            }
+            break;
+          case 'recent':
+            // Adjust time range to last hour
+            state.selectedHours = 1;
+            timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last 1 hr ▾`;
+            KuberaUtils.updateTimelineRuler();
+            fetchData();
+            break;
+          case 'all':
+          default:
+            // Reset filters
+            document.querySelectorAll('.filter-section .filter-tag:first-child').forEach(tag => {
+              tag.click();
+            });
+            // Reset time range
+            state.selectedHours = 6;
+            timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last 6 hrs ▾`;
+            KuberaUtils.updateTimelineRuler();
+            fetchData();
+            break;
+        }
+      });
     }
     
-    refreshInterval = setInterval(() => {
-      fetchTimelineData();
-      fetchClusterIssues();
-      console.log('Auto-refreshed data');
-    }, intervalSeconds * 1000);
-  }
-  
-  // Handle filter tag clicks
-  filterTags.forEach(tag => {
-    tag.addEventListener('click', function() {
-      // Get parent filter section
-      const filterSection = this.closest('.filter-section');
-      if (!filterSection) return;
+    // Add refresh button handler
+    if (refreshTimelineButton) {
+      refreshTimelineButton.addEventListener('click', fetchData);
+    }
+    
+    // Handle time range dropdown
+    if (timeRangeButton && timeRangeDropdown) {
+      timeRangeButton.addEventListener('click', function() {
+        timeRangeDropdown.style.display = 
+          timeRangeDropdown.style.display === 'block' ? 'none' : 'block';
+      });
       
-      // Get the filter title to identify which filter this is
-      const filterTitle = filterSection.querySelector('.filter-title').textContent;
-      
-      // Handle different filters
-      if (filterTitle === 'Priority') {
-        // Remove active class from all priority tags
-        filterSection.querySelectorAll('.filter-tag').forEach(t => {
-          t.classList.remove('active');
-          t.style.color = '#d8d9da';
-          t.style.backgroundColor = '#2a2a36';
+      timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(item => {
+        item.addEventListener('click', function() {
+          // Update active class
+          timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(i => 
+            i.classList.remove('active')
+          );
+          this.classList.add('active');
+          
+          // Update hour setting and button text
+          state.selectedHours = parseInt(this.getAttribute('data-hours'), 10);
+          timeRangeButton.innerHTML = 
+            `<i class="fas fa-clock btn-icon"></i> Last ${state.selectedHours} hrs ▾`;
+          
+          // Hide dropdown
+          timeRangeDropdown.style.display = 'none';
+          
+          // Refresh data
+          fetchData();
         });
-        
-        // Activate the clicked tag
-        this.classList.add('active');
-        this.style.backgroundColor = '#3872f2';
-        this.style.color = 'white';
-      } else {
-        // For other filters, just toggle the active class
-        const siblings = Array.from(this.parentNode.children);
-        siblings.forEach(sibling => sibling.classList.remove('active'));
-        this.classList.add('active');
-      }
+      });
       
-      // Apply filters
-      applyFilters();
-    });
-  });
-  
-  // Handle preset selector change
-  if (presetSelector) {
-    presetSelector.addEventListener('change', function() {
-      const preset = this.value;
-      console.log('Selected preset:', preset);
-      
-      // Apply preset filters
-      switch (preset) {
-        case 'high-priority':
-          // Select 'High' priority filter
-          const highPriorityTag = document.querySelector('.filter-section:nth-child(4) .filter-tag:nth-child(2)');
-          if (highPriorityTag) {
-            highPriorityTag.click();
-          }
-          break;
-        case 'recent':
-          // Adjust time range to last hour
-          timeRange.start = new Date(Date.now() - 60 * 60 * 1000); // 1 hour ago
-          updateTimelineRuler();
-          break;
-        case 'all':
-        default:
-          // Reset filters
-          document.querySelectorAll('.filter-section .filter-tag:first-child').forEach(tag => {
-            tag.click();
-          });
-          // Reset time range
-          timeRange.start = new Date(Date.now() - 6 * 60 * 60 * 1000); // 6 hours ago
-          updateTimelineRuler();
-          break;
-      }
-    });
-  }
-  
-  // Add sync button handler
-  const refreshTimelineButton = document.getElementById('refreshTimelineButton');
-  if (refreshTimelineButton) {
-    refreshTimelineButton.addEventListener('click', function () {
-      fetchTimelineData();
-      fetchClusterIssues();
-    });
+      // Close dropdown when clicking elsewhere
+      document.addEventListener('click', function(e) {
+        if (!timeRangeButton.contains(e.target) && !timeRangeDropdown.contains(e.target)) {
+          timeRangeDropdown.style.display = 'none';
+        }
+      });
+    }
   }
 
-  // Initialize timeline
-  fetchTimelineData();
-  updateTimelineRuler();
-  startAutoRefresh();
+  // Start initialization
+  init();
 });

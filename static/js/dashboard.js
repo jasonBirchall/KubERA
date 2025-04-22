@@ -1,40 +1,10 @@
 // Kubera Dashboard Application
 // Main JavaScript file to handle dashboard functionality
 
-// Immediately-invoked function expression (IIFE) to avoid polluting global namespace
 (function() {
-  // State variables
-  let state = {
-    allGroupedEvents: [],
-    allIndividualEvents: [],
-    groupedEvents: [], // Filtered data
-    individualEvents: [], // Filtered data
-    activeTab: 'grouped', // Default active tab
-    activeNamespace: 'All', // Default namespace filter
-    activePriority: 'All', // Default priority filter
-    currentCluster: '', // Current selected cluster
-    showingAllNamespaces: false, // Whether we're showing all namespaces or just the first few
-    selectedHours: 6, // Default time range
-    filterTerm: ''
-  };
-
-  // DOM elements
-  const elements = {
-    namespaceTags: null, // Will be populated after render
-    priorityTags: null, // Will be populated after render
-    groupedEventsTab: null,
-    eventStreamTab: null, 
-    tableBody: null,
-    tableHead: null,
-    clusterSelectorBtn: null,
-    clusterDropdown: null,
-    currentClusterName: null,
-    timeRangeButton: null,
-    timeRangeDropdown: null,
-    namespaceFilterTags: null,
-    priorityFilterTags: null,
-    refreshTimelineButton: null
-  };
+  // Use the shared state from KuberaUtils
+  const state = KuberaUtils.state;
+  const elements = KuberaUtils.elements;
 
   // Initialize the application
   function init() {
@@ -45,13 +15,41 @@
     setupEventListeners();
     
     // Initial data fetch
-    fetchKubeContexts();
-    fetchNamespaces();
-    fetchClusterIssues();
-    fetchTimelineData();
+    fetchInitialData();
     
     // Start auto-refresh
-    startAutoRefresh();
+    KuberaUtils.startAutoRefresh(refreshData);
+  }
+
+  // Fetch all initial data needed
+  function fetchInitialData() {
+    KuberaUtils.fetchKubeContexts()
+      .then(contexts => renderKubeContexts(contexts));
+    
+    KuberaUtils.fetchNamespaces()
+      .then(namespaces => renderNamespaceFilters(namespaces));
+    
+    refreshData();
+  }
+
+  // Refresh dashboard data
+  function refreshData() {
+    // Determine which timeline endpoint to use based on time range
+    const timelinePromise = (state.selectedHours <= 6) 
+      ? KuberaUtils.fetchTimelineData()
+      : KuberaUtils.fetchTimelineHistory();
+    
+    // Fetch timeline data
+    timelinePromise.then(data => {
+      KuberaUtils.renderTimelineTracks(data);
+      KuberaUtils.updateTimelineRuler();
+    });
+    
+    // Fetch cluster issues
+    KuberaUtils.fetchClusterIssues()
+      .then(issues => {
+        processClusterIssues(issues);
+      });
   }
 
   // Cache frequently used DOM elements
@@ -138,18 +136,14 @@
     }
     
     // Update timeline with filtered data
-    renderTimelineTracks(state.groupedEvents);
+    KuberaUtils.renderTimelineTracks(state.groupedEvents);
   }
 
   function clearSearchFilter() {
-    if (elements.filterInput) {
-      elements.filterInput.value = '';
-      state.filterTerm = '';
-      elements.filterInput.classList.remove('filter-active');
-      elements.clearSearchBtn.style.display = 'none';
-      applyFilters(); // Reset to normal filters
-    }
+    KuberaUtils.clearSearchFilter(elements.filterInput, elements.clearSearchBtn);
+    applyFilters(); // Reset to normal filters
   }
+
   // Set up event listeners
   function setupEventListeners() {
     // Tab switching
@@ -194,12 +188,7 @@
           elements.timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last ${state.selectedHours} hrs ▾`;
           elements.timeRangeDropdown.style.display = 'none';
           
-          if (state.selectedHours <= 6) {
-            fetchTimelineData();
-          } else {
-            fetchTimelineHistory();
-          }
-          fetchClusterIssues();
+          refreshData();
         });
       });
       
@@ -269,11 +258,9 @@
     
     // Refresh button
     if (elements.refreshTimelineButton) {
-      elements.refreshTimelineButton.addEventListener('click', function () {
-        fetchTimelineData();
-        fetchClusterIssues();
-      });
+      elements.refreshTimelineButton.addEventListener('click', refreshData);
     }
+    
     // Filter input event listeners
     if (elements.filterInput) {
       // Focus on '/' key press
@@ -313,28 +300,6 @@
     if (elements.clearSearchBtn) {
       elements.clearSearchBtn.addEventListener('click', clearSearchFilter);
     }
-  }
-
-  function fetchTimelineHistory() {
-    fetch(`/api/timeline_history?hours=${state.selectedHours}`)
-      .then(r => r.json())
-      .then(data => {
-        renderTimelineTracks(data);
-        updateTimelineRuler();
-      })
-      .catch(err => console.error('Error fetching timeline history:', err));
-  }
-
-  // Function to fetch namespaces
-  function fetchNamespaces() {
-    fetch('/api/namespaces')
-      .then(response => response.json())
-      .then(namespaces => {
-        renderNamespaceFilters(namespaces);
-      })
-      .catch(error => {
-        console.error('Error fetching Kubernetes namespaces:', error);
-      });
   }
 
   // Render the namespace filters with "more +" feature
@@ -458,26 +423,6 @@
     });
   }
 
-  // Fetch available Kubernetes contexts
-  function fetchKubeContexts() {
-    fetch('/api/kube-contexts')
-      .then(response => response.json())
-      .then(contexts => {
-        renderKubeContexts(contexts);
-      })
-      .catch(error => {
-        console.error('Error fetching Kubernetes contexts:', error);
-        // Fallback to default sample contexts in case of error
-        const sampleContexts = [
-          { name: 'kubera-local', current: true },
-          { name: 'prod-cluster', current: false },
-          { name: 'staging-cluster', current: false },
-          { name: 'minikube', current: false }
-        ];
-        renderKubeContexts(sampleContexts);
-      });
-  }
-
   // Render Kubernetes contexts in the dropdown
   function renderKubeContexts(contexts) {
     if (!elements.clusterDropdown) return;
@@ -501,7 +446,6 @@
       
       item.addEventListener('click', function() {
         // In a real implementation, you would call an API to switch contexts
-        // For demo purposes, we'll just update the UI
         document.querySelectorAll('#clusterDropdown .dropdown-item').forEach(i => i.classList.remove('active'));
         this.classList.add('active');
         elements.currentClusterName.textContent = context.name;
@@ -513,9 +457,8 @@
         // Close the dropdown
         elements.clusterDropdown.style.display = 'none';
         
-        // Reload data for the new cluster (in a real implementation)
-        fetchClusterIssues();
-        fetchNamespaces();
+        // Reload data for the new cluster
+        refreshData();
       });
       
       elements.clusterDropdown.appendChild(item);
@@ -630,7 +573,93 @@
     }
     
     // Update timeline with filtered data
-    renderTimelineTracks(state.groupedEvents);
+    KuberaUtils.renderTimelineTracks(state.groupedEvents);
+  }
+
+  // Process cluster issues data
+  function processClusterIssues(issues) {
+    // Store the original grouped events
+    state.allGroupedEvents = issues;
+    
+    // Process all individual events
+    state.allIndividualEvents = [];
+    let totalEvents = 0;
+    
+    // Also collect unique namespaces to potentially update filter options
+    const namespaces = new Set();
+    namespaces.add('All'); // Always include "All"
+    
+    issues.forEach(issue => {
+      totalEvents += issue.count;
+      
+      if (issue.pods) {
+        issue.pods.forEach(pod => {
+          // Add namespace to our set of unique namespaces
+          if (pod.namespace) {
+            namespaces.add(pod.namespace);
+          }
+          
+          state.allIndividualEvents.push({
+            severity: issue.severity,
+            alertType: issue.name,
+            pod: pod.name,
+            namespace: pod.namespace || 'default',
+            timestamp: pod.timestamp
+          });
+        });
+      }
+    });
+    
+    // Sort by timestamp, newest first
+    state.allIndividualEvents.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    // Update namespace filter tags if they're missing any namespaces
+    // This ensures all available namespaces show in the filter
+    updateNamespaceFilters(namespaces);
+    
+    // Set up priority filter
+    setupPriorityFilter();
+    
+    // Apply initial filters (which defaults to "All")
+    applyFilters();
+  }
+
+  // Function to update namespace filters with any missing namespaces
+  function updateNamespaceFilters(namespaces) {
+    const namespaceSection = document.querySelector('.filter-section:nth-child(2) .filter-tags');
+    if (!namespaceSection) return;
+    
+    // Get existing namespace filter tags
+    const existingNamespaces = new Set();
+    if (elements.namespaceTags) {
+      elements.namespaceTags.forEach(tag => {
+        existingNamespaces.add(tag.textContent);
+      });
+    }
+    
+    // Add any missing namespaces
+    namespaces.forEach(namespace => {
+      if (!existingNamespaces.has(namespace)) {
+        const newTag = document.createElement('div');
+        newTag.className = 'filter-tag';
+        newTag.textContent = namespace;
+        newTag.addEventListener('click', function() {
+          // Remove active class from all namespace tags
+          document.querySelectorAll('.filter-section:nth-child(2) .filter-tag').forEach(t => {
+            t.classList.remove('active');
+          });
+          
+          // Add active class to clicked tag
+          this.classList.add('active');
+          
+          // Update active namespace and apply filter
+          state.activeNamespace = this.textContent;
+          applyFilters();
+        });
+        
+        namespaceSection.appendChild(newTag);
+      }
+    });
   }
 
   // Function to render grouped events
@@ -672,7 +701,7 @@
         <td><span class="badge ${badgeClass}">${severityText}</span></td>
         <td>${issue.name}</td>
         <td>View ${issue.count} events</td>
-        <td>${latestPod ? formatTimestamp(latestPod.timestamp) : '-'}</td>
+        <td>${latestPod ? KuberaUtils.formatTimestamp(latestPod.timestamp) : '-'}</td>
         <td>${latestPod ? 'Pod ' + latestPod.name : '-'}</td>
       `;
 
@@ -709,217 +738,11 @@
         <td>${event.alertType}</td>
         <td>${event.pod}</td>
         <td>${event.namespace}</td>
-        <td>${formatTimestamp(event.timestamp)}</td>
+        <td>${KuberaUtils.formatTimestamp(event.timestamp)}</td>
       `;
 
       elements.tableBody.appendChild(row);
     });
-  }
-
-  // Helper to format timestamp
-  function formatTimestamp(timestamp) {
-    if (!timestamp) return '-';
-    const date = new Date(timestamp);
-    return date.toLocaleString();
-  }
-
-  // Fetch data from API and process it
-  function fetchClusterIssues() {
-    fetch('/api/cluster_issues')
-      .then(response => response.json())
-      .then(issues => {
-        // Store the original grouped events
-        state.allGroupedEvents = issues;
-        
-        // Process all individual events
-        state.allIndividualEvents = [];
-        let totalEvents = 0;
-        
-        // Also collect unique namespaces to potentially update filter options
-        const namespaces = new Set();
-        namespaces.add('All'); // Always include "All"
-        
-        issues.forEach(issue => {
-          totalEvents += issue.count;
-          
-          if (issue.pods) {
-            issue.pods.forEach(pod => {
-              // Add namespace to our set of unique namespaces
-              if (pod.namespace) {
-                namespaces.add(pod.namespace);
-              }
-              
-              state.allIndividualEvents.push({
-                severity: issue.severity,
-                alertType: issue.name,
-                pod: pod.name,
-                namespace: pod.namespace || 'default',
-                timestamp: pod.timestamp
-              });
-            });
-          }
-        });
-        
-        // Sort by timestamp, newest first
-        state.allIndividualEvents.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        
-        // Update namespace filter tags if they're missing any namespaces
-        // This ensures all available namespaces show in the filter
-        updateNamespaceFilters(namespaces);
-        
-        // Set up priority filter
-        setupPriorityFilter();
-        
-        // Apply initial filters (which defaults to "All")
-        applyFilters();
-      })
-      .catch(error => {
-        console.error('Error fetching cluster issues:', error);
-        if (elements.tableBody) {
-          elements.tableBody.innerHTML = `<tr><td colspan="5">Error loading data: ${error.message}</td></tr>`;
-        }
-      });
-    window.fetchClusterIssues = fetchClusterIssues;
-  }
-  
-  // Function to update namespace filters with any missing namespaces
-  function updateNamespaceFilters(namespaces) {
-    const namespaceSection = document.querySelector('.filter-section:nth-child(2) .filter-tags');
-    if (!namespaceSection) return;
-    
-    // Get existing namespace filter tags
-    const existingNamespaces = new Set();
-    if (elements.namespaceTags) {
-      elements.namespaceTags.forEach(tag => {
-        existingNamespaces.add(tag.textContent);
-      });
-    }
-    
-    // Add any missing namespaces
-    namespaces.forEach(namespace => {
-      if (!existingNamespaces.has(namespace)) {
-        const newTag = document.createElement('div');
-        newTag.className = 'filter-tag';
-        newTag.textContent = namespace;
-        newTag.addEventListener('click', function() {
-          // Remove active class from all namespace tags
-          document.querySelectorAll('.filter-section:nth-child(2) .filter-tag').forEach(t => {
-            t.classList.remove('active');
-          });
-          
-          // Add active class to clicked tag
-          this.classList.add('active');
-          
-          // Update active namespace and apply filter
-          state.activeNamespace = this.textContent;
-          applyFilters();
-        });
-        
-        namespaceSection.appendChild(newTag);
-      }
-    });
-  }
-
-  // Function to fetch timeline data
-  function fetchTimelineData() {
-    console.log('Fetching timeline data...');
-    fetch(`/api/timeline_data?hours=${state.selectedHours}`)
-      .then(response => response.json())
-      .then(data => {
-        console.log('Timeline data received:', data);
-        renderTimelineTracks(data);
-        updateTimelineRuler();
-      })
-      .catch(error => {
-        console.error('Error fetching timeline data:', error);
-      });
-  }
-
-  // Render timeline tracks
-  function renderTimelineTracks(issues) {
-    const tracksContainer = document.querySelector('.timeline-tracks');
-    if (!tracksContainer) return;
-    
-    tracksContainer.innerHTML = ''; // Clear existing tracks
-    
-    if (!issues || issues.length === 0) {
-      tracksContainer.innerHTML = '<div style="padding: 15px; color: #7e7e8f;">No issues detected in the cluster</div>';
-      return;
-    }
-    
-    // Create a track for each issue type
-    issues.forEach(issue => {
-      const track = document.createElement('div');
-      track.className = 'timeline-track';
-      
-      // Add the track title with count
-      const title = document.createElement('div');
-      title.className = 'timeline-track-title';
-      title.textContent = `${issue.name} (${issue.count})`;
-      track.appendChild(title);
-      
-      // Add events for each pod or use a predefined position
-      if (issue.pods && issue.pods.length > 0) {
-        issue.pods.forEach(pod => {
-          // Create event marker
-          const event = document.createElement('div');
-          event.className = `timeline-event ${issue.severity || 'low'}`;
-          
-          // Calculate position based on timestamp or use the provided position
-          const eventTime = new Date(pod.timestamp);
-          let positionPercent = issue.timeline_position; // Default to middle if no position
-          
-          // Set position and width
-          event.style.left = `${positionPercent}%`;
-          event.style.width = '1%'; // Small fixed width
-          
-          // Add tooltip with pod info
-          event.title = `Pod: ${pod.name}\nNamespace: ${pod.namespace}\nTime: ${new Date(pod.timestamp).toLocaleString()}`;
-          
-          track.appendChild(event);
-        });
-      } else if (issue.timeline_position) {
-        // If no pods but we have a position, show a single event
-        const event = document.createElement('div');
-        event.className = `timeline-event ${issue.severity || 'low'}`;
-        event.style.left = `${issue.timeline_position}%`;
-        event.style.width = '1%';
-        track.appendChild(event);
-      }
-      
-      tracksContainer.appendChild(track);
-    });
-  }
-
-  // Update timeline ruler with accurate time markers
-  function updateTimelineRuler() {
-    const ruler = document.querySelector('.timeline-ruler');
-    if (!ruler) return;
-    
-    ruler.innerHTML = '';
-
-    const segments = 7;
-    for (let i = 0; i < segments; i++) {
-      const marker = document.createElement('div');
-      const time = new Date(Date.now() - (state.selectedHours * 60 * 60 * 1000) + (i * state.selectedHours * 60 * 60 * 1000 / (segments - 1)));
-      marker.textContent = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      ruler.appendChild(marker);
-    }
-  }
-
-  // Auto-refresh functionality
-  let refreshInterval;
-
-  function startAutoRefresh(intervalSeconds = 30) {
-    if (refreshInterval) {
-      clearInterval(refreshInterval);
-    }
-    
-    refreshInterval = setInterval(() => {
-      fetchTimelineData();
-      fetchClusterIssues();
-      console.log('Auto-refreshed data');
-    }, intervalSeconds * 1000);
   }
 
   // Initialize when DOM is fully loaded
