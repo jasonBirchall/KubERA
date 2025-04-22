@@ -9,7 +9,7 @@ KUBE_PORT := 80
 DASHBOARD_PORT := 8501
 DASHBOARD_CONTAINER := 0.0.1
 
-.PHONY: cluster-up cluster-down demo-app-up demo-app-expose up dashboard dashboard-build dashboard-docker
+.PHONY: cluster-up cluster-down demo-app-up demo-app-expose up dashboard dashboard-build dashboard-docker db-reset
 
 ## Check if OPENAI_API_KEY is set
 check-api-key:
@@ -83,6 +83,12 @@ destroy-prometheus:
 prometheus-port-forward:
 	kubectl port-forward -n monitoring service/prometheus-service 9090:9090
 	
+
+db-reset:                     ## DELETE FROM every table in the DB
+	@echo "Truncating $(DB_FILE)…"
+	@sqlite3 $(DB_FILE) "PRAGMA foreign_keys=OFF; DELETE FROM pod_alerts;"
+	@echo "✅  All rows deleted."
+
 ## Bring up everything in one command:
 ## 1) Create cluster, 2) Deploy app, 3) Expose service
 up: cluster-up demo-app-up demo-app-expose
