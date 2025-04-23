@@ -644,7 +644,6 @@
     }
   }
 
-  // Function to render grouped events
   function renderGroupedEvents() {
     if (!elements.tableBody) return;
     
@@ -676,17 +675,30 @@
         }, null);
       }
       
-      // Format source for display
-      const sourceText = issue.source === 'prometheus' 
-        ? '<span class="badge-prometheus">Prometheus</span>' 
-        : '<span class="badge-kubernetes">Kubernetes</span>';
+      // Format source for display - UPDATED TO HANDLE ARGOCD
+      let sourceText = '';
+      if (issue.source === 'prometheus') {
+        sourceText = '<span class="badge-prometheus">Prometheus</span>';
+      } else if (issue.source === 'argocd') {
+        sourceText = '<span class="badge-argocd">ArgoCD</span>';
+      } else {
+        sourceText = '<span class="badge-kubernetes">Kubernetes</span>';
+      }
       
-      // Set up the onclick with source info
-      const sourceParam = issue.source === 'prometheus' ? 'prometheus' : 'kubernetes';
+      // Set up the onclick with source info - UPDATED TO HANDLE ARGOCD
+      const sourceParam = issue.source || 'kubernetes';
+      
+      // Set up the correct function to call - UPDATED FOR ARGOCD
+      let onClickFunction = `openAnalysisPanel('${issue.name}', '${sourceParam}')`;
+      
+      // For ArgoCD, we need to use a different function and pass the app name
+      if (sourceParam === 'argocd' && latestPod) {
+        onClickFunction = `openArgoCDAnalysisPanel('${latestPod.name}')`;
+      }
       
       // Build the row
       const row = document.createElement('tr');
-      row.setAttribute('onclick', `openAnalysisPanel('${issue.name}', '${sourceParam}')`);
+      row.setAttribute('onclick', onClickFunction);
       row.innerHTML = `
         <td><span class="badge ${badgeClass}">${severityText}</span></td>
         <td>${issue.name}</td>
@@ -700,7 +712,6 @@
     });
   }
 
-  // Function to render individual event stream
   function renderEventStream() {
     if (!elements.tableBody) return;
     
@@ -721,17 +732,27 @@
         badgeClass = 'badge-medium';
       }
       
-      // Format source for display
-      const sourceText = event.source === 'prometheus' 
-        ? '<span class="badge-prometheus">Prometheus</span>' 
-        : '<span class="badge-kubernetes">Kubernetes</span>';
+      // Format source for display - UPDATED TO HANDLE ARGOCD
+      let sourceText = '';
+      if (event.source === 'prometheus') {
+        sourceText = '<span class="badge-prometheus">Prometheus</span>';
+      } else if (event.source === 'argocd') {
+        sourceText = '<span class="badge-argocd">ArgoCD</span>';
+      } else {
+        sourceText = '<span class="badge-kubernetes">Kubernetes</span>';
+      }
       
-      // Set up the onclick with source info
-      const sourceParam = event.source === 'prometheus' ? 'prometheus' : 'kubernetes';
+      // Set up the onclick with source info - UPDATED FOR ARGOCD
+      let onClickFunction = `openAnalysisPanel('${event.alertType}', '${event.source || 'kubernetes'}')`;
+      
+      // For ArgoCD, use a different function
+      if (event.source === 'argocd') {
+        onClickFunction = `openArgoCDAnalysisPanel('${event.pod}')`;
+      }
       
       // Build the row
       const row = document.createElement('tr');
-      row.setAttribute('onclick', `openAnalysisPanel('${event.alertType}', '${sourceParam}')`);
+      row.setAttribute('onclick', onClickFunction);
       row.innerHTML = `
         <td><span class="badge ${badgeClass}">${severityText}</span></td>
         <td>${event.alertType}</td>
@@ -744,6 +765,7 @@
       elements.tableBody.appendChild(row);
     });
   }
+
   // Function to update namespace filters with any missing namespaces
   function updateNamespaceFilters(namespaces) {
     const namespaceSection = document.querySelector('.filter-section:nth-child(2) .filter-tags');

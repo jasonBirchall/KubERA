@@ -93,6 +93,41 @@ reset-db:
 	python reset_db.py
 	@echo "✅ Database reset complete"
 
+install-argocd:
+	@echo "Installing ArgoCD in 'argocd' namespace..."
+	kubectl apply -f k8s/argocd.yaml
+	@echo "Waiting for ArgoCD components to start..."
+	kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+	@echo "✅ ArgoCD installed successfully"
+	@echo "ArgoCD UI is available at http://localhost:30080"
+	@echo "Default admin username: admin"
+	@echo "Run 'kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath=\"{.data.password}\" | base64 -d' to get the password"
+
+install-argocd-full:
+	@echo "Installing official ArgoCD in 'argocd' namespace..."
+	kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+	kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+	@echo "Waiting for ArgoCD components to start (this may take a few minutes)..."
+	kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd || true
+	@echo "✅ ArgoCD installed successfully"
+	@echo "To access ArgoCD UI, run: kubectl port-forward svc/argocd-server -n argocd 8080:443"
+	@echo "Default admin username: admin"
+	@echo "Run 'kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath=\"{.data.password}\" | base64 -d' to get the password"
+
+uninstall-argocd:
+	@echo "Removing ArgoCD from the cluster..."
+	kubectl delete -f k8s/argocd.yaml
+	@echo "✅ ArgoCD removed"
+
+argocd-port-forward:
+	@echo "Forwarding ArgoCD server to http://localhost:8080 (Ctrl+C to stop)"
+	kubectl port-forward svc/argocd-server -n argocd 8080:80
+
+create-demo-apps:
+	@echo "Creating demo ArgoCD applications..."
+	kubectl apply -f k8s/argocd-demo-apps.yaml
+	@echo "✅ Demo applications created"
+
 ## Bring up everything in one command:
 ## 1) Create cluster, 2) Deploy app, 3) Expose service
 up: cluster-up demo-app-up demo-app-expose

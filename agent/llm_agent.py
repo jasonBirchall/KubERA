@@ -6,6 +6,65 @@ class LlmAgent:
         self.client = OpenAI()
         self.model = model
 
+    def diagnose_argocd_app(self, metadata: dict):
+            """
+            Given a dictionary 'metadata' which contains ArgoCD application info:
+            - "app_name": The name of the application
+            - "status": The application status including health, sync info, etc.
+            - "events": Recent events for the application
+            
+            Returns a diagnosis of any issues with the ArgoCD application.
+            """
+            # Prepare a system prompt for ArgoCD application analysis
+            system_prompt = (
+                "You are an AI diagnosing ArgoCD application issues. We have metadata fields:\n"
+                "- 'app_name': Name of the ArgoCD application.\n"
+                "- 'status': Status information including:\n"
+                "   - 'health': Health status (Healthy, Degraded, Progressing, Unknown).\n"
+                "   - 'sync': Sync status (Synced, OutOfSync, Unknown).\n"
+                "   - 'operationState': Details about the last sync operation.\n"
+                "- 'events': List of recent events with fields:\n"
+                "   - 'type': Normal or Warning.\n"
+                "   - 'reason': Short reason for the event.\n"
+                "   - 'message': Detailed message.\n"
+                "   - 'lastTimestamp': When the event occurred.\n"
+                "\n"
+                "Common issues include:\n"
+                "- Out of sync: The desired state doesn't match the actual state.\n"
+                "- Degraded health: The application is running but not functioning properly.\n"
+                "- Failed sync: The sync operation encountered errors.\n"
+                "- Resource errors: Kubernetes resources failed to deploy.\n"
+                "\n"
+                "Use these clues to determine root causes and propose fixes.\n"
+                "Format your response with 'Root Cause:' followed by bullet points, then 'Recommended Actions:' with steps to resolve.\n"
+            )
+
+            # Convert metadata to JSON for clarity
+            metadata_json = json.dumps(metadata, indent=2)
+
+            # Prepare a user prompt asking for diagnosis
+            user_prompt = (
+                "Based on the ArgoCD application metadata provided, please diagnose any issues "
+                "and recommend actions to resolve them. If everything is fine, say so."
+            )
+
+            # Build the conversation
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "assistant",
+                    "content": f"Here is the ArgoCD application metadata:\n{metadata_json}"
+                },
+                {"role": "user", "content": user_prompt}
+            ]
+            
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.7,
+            )
+            return response.choices[0].message.content
+
     def diagnose_pod(self, metadata: dict):
         """
         Given a dictionary 'metadata' which might include:

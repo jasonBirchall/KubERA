@@ -688,3 +688,126 @@ body {
   background-color: rgba(126, 126, 143, 0.3);
   z-index: 0;
 }
+
+/* ArgoCD specific styles */
+.badge-argocd {
+  background-color: rgba(102, 51, 153, 0.15); /* Purple */
+  color: #9966cc;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-block;
+}
+
+.argocd-event {
+  border: 2px dashed #9966cc;
+  opacity: 0.9;
+}
+
+.events-table tr:hover.argocd-row {
+  background-color: rgba(102, 51, 153, 0.05);
+}
+
+.argocd-source {
+  border-left: 3px solid #9966cc;
+  padding-left: 12px;
+}
+
+/* ArgoCD application details */
+.app-details {
+  background-color: #1d1d30;
+  border-radius: 4px;
+  padding: 10px;
+  margin-bottom: 15px;
+}
+
+.app-details-title {
+  font-weight: 500;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.sync-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  margin-left: 8px;
+}
+
+.sync-status.synced {
+  background-color: rgba(76, 175, 80, 0.15);
+  color: #7ED321;
+}
+
+.sync-status.out-of-sync {
+  background-color: rgba(255, 152, 0, 0.15);
+  color: #f5a623;
+}
+
+.health-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  margin-left: 8px;
+}
+
+.health-status.healthy {
+  background-color: rgba(76, 175, 80, 0.15);
+  color: #7ED321;
+}
+
+.health-status.degraded {
+  background-color: rgba(244, 67, 54, 0.15);
+  color: #ff5a5f;
+}
+
+.health-status.progressing {
+  background-color: rgba(33, 150, 243, 0.15);
+  color: #50acff;
+}
+
+.resource-status {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.resource-status .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+
+.status-dot.synced {
+  background-color: #7ED321;
+}
+
+.status-dot.out-of-sync {
+  background-color: #f5a623;
+}
+
+.status-dot.error {
+  background-color: #ff5a5f;
+}
+
+/* Special styling for data source filter */
+.filter-section:nth-child(5) .filter-tag:nth-child(4)::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #9966cc;
+}
+
+/* Timeline adjustments for ArgoCD events */
+.timeline-event.argocd {
+  border: 2px dashed #9966cc;
+  opacity: 0.9;
+}

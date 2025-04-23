@@ -164,9 +164,14 @@ const KuberaUtils = (function() {
       const track = document.createElement('div');
       track.className = 'timeline-track';
 
-      // Add source indicator to the title if it's from Prometheus
-      const sourceIndicator = issue.source === 'prometheus' ? ' [Prometheus]' : '';
-      
+       // Add source indicator to the title based on source
+      let sourceIndicator = '';
+      if (issue.source === 'prometheus') {
+        sourceIndicator = ' [Prometheus]';
+      } else if (issue.source === 'argocd') {
+        sourceIndicator = ' [ArgoCD]';
+      }     
+
       const title = document.createElement('div');
       title.className = 'timeline-track-title';
       title.textContent = `${issue.name}${sourceIndicator} (${issue.count})`;
@@ -190,25 +195,41 @@ const KuberaUtils = (function() {
           // Add a special class for Prometheus events
           if (pod.source === 'prometheus' || issue.source === 'prometheus') {
             ev.classList.add('prometheus-event');
+          } else if (pod.source === 'argocd' || issue.source === 'argocd') {
+            ev.classList.add('argocd-event');
           }
-          
-          ev.style.left  = `${leftPct}%`;
-          ev.style.width = `${widthPct}%`;
-          ev.title = [
+
+           let tooltipContent = [
             `Pod: ${pod.name}`,
             `Namespace: ${pod.namespace}`,
             `Source: ${pod.source || issue.source || 'kubernetes'}`,
             `Started: ${new Date(pod.start).toLocaleString()}`,
             pod.end ? `Ended: ${new Date(pod.end).toLocaleString()}`
                     : 'Still occurring'
-          ].join('\n');
+          ];
+          
+          // Add ArgoCD-specific details if available
+          if (pod.details && (pod.source === 'argocd' || issue.source === 'argocd')) {
+            tooltipContent.push('');
+            tooltipContent.push(`Health: ${pod.details.healthStatus || 'Unknown'}`);
+            tooltipContent.push(`Sync: ${pod.details.syncStatus || 'Unknown'}`);
+          }         
 
-          // Add click handler that includes source info
+          ev.style.left  = `${leftPct}%`;
+          ev.style.width = `${widthPct}%`;
+          ev.title = tooltipContent.join('\n');
+
+          // click handler that includes source info
           ev.addEventListener('click', function() {
             // Extract issue type from timeline
-            const sourceParam = (pod.source === 'prometheus' || issue.source === 'prometheus') 
-              ? 'prometheus' : 'kubernetes';
-            openAnalysisPanel(issue.name, sourceParam);
+              const sourceParam = (pod.source === 'prometheus' || issue.source === 'prometheus') 
+              ? 'prometheus' : (pod.source === 'argocd' || issue.source === 'argocd')
+              ? 'argocd' : 'kubernetes';
+            if (sourceParam === 'argocd') {
+              openArgoCDAnalysisPanel(pod.name);
+            } else {
+              openAnalysisPanel(issue.name, sourceParam);
+            }
           });
 
           track.appendChild(ev);
@@ -384,7 +405,26 @@ const KuberaUtils = (function() {
       });
     });
   }
-  
+
+  function addArgoCDStyles() {
+    const style = document.createElement('style');
+    style.textContent = `
+      .argocd-event {
+        border: 2px dashed #9966cc;
+        opacity: 0.9;
+      }
+      .badge-argocd {
+        background-color: rgba(102, 51, 153, 0.15);
+        color: #9966cc;
+      }
+      .timeline-event.argocd {
+        border: 2px dashed #9966cc;
+        opacity: 0.9;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   // Initialize utility module
   function initialize(refreshCallback) {
     if (initialized) return;
@@ -395,10 +435,26 @@ const KuberaUtils = (function() {
     // Add CSS for Prometheus events
     addPrometheusStyles();
     
+    // Add CSS for ArgoCD events
+    addArgoCDStyles();
+
     // Mark as initialized
     initialized = true;
   }
   
+  function fetchArgoCDData() {
+    return fetch(`/api/argocd_data?hours=${state.selectedHours}`)
+      .then(response => response.json())
+      .then(data => {
+        console.log('ArgoCD data received:', data);
+        return data;
+      })
+      .catch(error => {
+        console.error('Error fetching ArgoCD data:', error);
+        return [];
+      });
+  }
+
   // Add CSS styles for Prometheus events
   function addPrometheusStyles() {
     const style = document.createElement('style');
@@ -451,20 +507,42 @@ const KuberaUtils = (function() {
 // Export for global use
 window.KuberaUtils = KuberaUtils;
 
-// Update the analysis panel open function to include source parameter
+// These functions need to be in global scope as they're called from HTML onclick attributes
 function openAnalysisPanel(issueType, source = 'kubernetes') {
   const panel = document.getElementById('analysisPanel');
   const title = panel.querySelector('.analysis-title');
   const content = panel.querySelector('.analysis-content');
   
-  const sourceLabel = source === 'prometheus' ? ' [Prometheus]' : '';
+  // Handle different sources with appropriate labels
+  let sourceLabel = '';
+  if (source === 'prometheus') {
+    sourceLabel = ' [Prometheus]';
+  } else if (source === 'argocd') {
+    sourceLabel = ' [ArgoCD]';
+  } else {
+    sourceLabel = ''; // Kubernetes is the default, no need for a label
+  }
+  
   title.textContent = `Investigating alert: ${issueType}${sourceLabel}`;
   content.innerHTML = '<div style="text-align: center; padding: 20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Loading analysis...</p></div>';
   
   // Show the panel
   panel.classList.add('open');
   
-  // Fetch analysis data for this issue type
+  // For ArgoCD events, direct to the ArgoCD-specific endpoint
+  if (source === 'argocd') {
+    fetch(`/api/analyze/argocd/${issueType}`)
+      .then(response => response.json())
+      .then(data => {
+        renderArgoCDAnalysis(data);
+      })
+      .catch(error => {
+        content.innerHTML = `<div class="error-message">Error loading analysis: ${error.message}</div>`;
+      });
+    return;
+  }
+  
+  // For Kubernetes and Prometheus, use the regular endpoint
   fetch(`/api/analyze/${issueType}?source=${source}`)
     .then(response => response.json())
     .then(data => {
@@ -473,12 +551,6 @@ function openAnalysisPanel(issueType, source = 'kubernetes') {
     .catch(error => {
       content.innerHTML = `<div class="error-message">Error loading analysis: ${error.message}</div>`;
     });
-}
-
-// Close the analysis panel
-function closeAnalysisPanel() {
-  const panel = document.getElementById('analysisPanel');
-  panel.classList.remove('open');
 }
 
 // Render the analysis data in the panel
@@ -492,12 +564,21 @@ function renderAnalysis(data, source = 'kubernetes') {
   
   let html = '';
   
-  // Add source indicator if it's from Prometheus
-  const sourceClass = source === 'prometheus' ? 'prometheus-source' : '';
-  const sourceInfo = source === 'prometheus' ? 
-    `<div class="section-info" style="margin-bottom: 15px; color: #f06028;">
+  // Add source indicator based on the source
+  let sourceClass = '';
+  let sourceInfo = '';
+  
+  if (source === 'prometheus') {
+    sourceClass = 'prometheus-source';
+    sourceInfo = `<div class="section-info" style="margin-bottom: 15px; color: #f06028;">
       <i class="fas fa-chart-line"></i> This analysis is based on Prometheus metrics data.
-     </div>` : '';
+     </div>`;
+  } else if (source === 'argocd') {
+    sourceClass = 'argocd-source';
+    sourceInfo = `<div class="section-info" style="margin-bottom: 15px; color: #9966cc;">
+      <i class="fas fa-code-branch"></i> This analysis is based on ArgoCD application data.
+     </div>`;
+  }
   
   data.analysis.forEach(result => {
     html += `
@@ -541,4 +622,9 @@ function renderAnalysis(data, source = 'kubernetes') {
   });
   
   content.innerHTML = html;
+}
+
+function closeAnalysisPanel() {
+  const panel = document.getElementById('analysisPanel');
+  panel.classList.remove('open');
 }

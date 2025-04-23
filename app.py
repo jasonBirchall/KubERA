@@ -9,10 +9,13 @@ from agent.tools.k8s_tool import K8sTool
 from agent.tools.prometheus_tool import PrometheusTool
 from agent.llm_agent import LlmAgent
 from db import init_db, record_failure, engine, migrate_db
+from agent.tools.argocd_tool import ArgoCDTool
+
     
 
 k8s_tool = K8sTool()
 prometheus_tool = PrometheusTool()  # Using default localhost:9090
+argocd_tool = ArgoCDTool(base_url="http://localhost:8080")
 llm_agent = LlmAgent()
     
 app = Flask(__name__)
@@ -178,6 +181,49 @@ def get_timeline_data():
 
             record_failure(namespace, pod, issue, severity, first_seen, last_seen, source="kubernetes")
 
+    if data_source in ['all', 'argocd']:
+        try:
+            # Get ArgoCD alerts
+            argocd_alerts = argocd_tool.get_application_alerts(hours)
+            app.logger.debug(f"[DEBUG] ArgoCD alerts = {argocd_alerts}")
+            
+            # Verify alerts have the correct source
+            for alert in argocd_alerts:
+                # Make sure the alert has the source set to 'argocd'
+                if alert.get('source') != 'argocd':
+                    alert['source'] = 'argocd'
+                
+                # Make sure all pods have the source set to 'argocd'
+                for pod in alert.get('pods', []):
+                    if pod.get('source') != 'argocd':
+                        pod['source'] = 'argocd'
+        except Exception as e:
+            app.logger.warning(f"[WARNING] Error fetching ArgoCD alerts: {e}. Using synthetic data.")
+            # Fall back to synthetic data
+            argocd_alerts = argocd_tool.generate_synthetic_alerts()
+
+    # Similar check in the get_cluster_issues function:
+    if data_source in ['all', 'argocd']:
+        try:
+            # Get ArgoCD alerts
+            argocd_alerts = argocd_tool.get_application_alerts(hours=1)
+            app.logger.debug(f"[DEBUG] ArgoCD alerts = {argocd_alerts}")
+            
+            # Verify alerts have the correct source
+            for alert in argocd_alerts:
+                # Make sure the alert has the source set to 'argocd'
+                if alert.get('source') != 'argocd':
+                    alert['source'] = 'argocd'
+                
+                # Make sure all pods have the source set to 'argocd'
+                for pod in alert.get('pods', []):
+                    if pod.get('source') != 'argocd':
+                        pod['source'] = 'argocd'
+        except Exception as e:
+            app.logger.warning(f"[WARNING] Error fetching ArgoCD alerts: {e}. Using synthetic data.")
+            # Fall back to synthetic data
+            argocd_alerts = argocd_tool.generate_synthetic_alerts()
+
     # Get Prometheus data if requested
     if data_source in ['all', 'prometheus']:
         try:
@@ -201,6 +247,7 @@ def get_timeline_data():
                 "count": 0,
                 "source": "prometheus"
             })
+
             
             for pod in alert.get("pods", []):
                 pod_name = pod.get("name")
@@ -301,7 +348,7 @@ def get_prometheus_data():
 @app.route('/api/cluster_issues')
 def get_cluster_issues():
     namespace = "default"
-    data_source = request.args.get('source', 'all')  # 'kubernetes', 'prometheus', or 'all'
+    data_source = request.args.get('source', 'all')  # 'kubernetes', 'prometheus', 'argocd', or 'all'
     issue_groups = {}
     
     # Get Kubernetes data if requested
@@ -364,8 +411,99 @@ def get_cluster_issues():
                 })
                 issue_groups[f"{alert_name}_prom"]["count"] += 1
 
+    # Get ArgoCD data if requested
+    if data_source in ['all', 'argocd']:
+        try:
+            # Get ArgoCD alerts
+            argocd_alerts = argocd_tool.get_application_alerts(hours=1)
+            app.logger.debug(f"[DEBUG] ArgoCD alerts = {argocd_alerts}")
+        except Exception as e:
+            app.logger.warning(f"[WARNING] Error fetching ArgoCD alerts: {e}. Using synthetic data.")
+            # Fall back to synthetic data
+            argocd_alerts = argocd_tool.generate_synthetic_alerts()
+        
+        # Process ArgoCD alerts
+        for alert in argocd_alerts:
+            alert_name = alert["name"]
+            severity = alert["severity"]
+            
+            if f"{alert_name}_argo" not in issue_groups:
+                issue_groups[f"{alert_name}_argo"] = {
+                    "name": alert_name,
+                    "severity": severity,
+                    "pods": [],
+                    "count": 0,
+                    "source": "argocd"
+                }
+            
+            for pod in alert.get("pods", []):
+                issue_groups[f"{alert_name}_argo"]["pods"].append({
+                    "name": pod.get("name"),
+                    "namespace": pod.get("namespace", namespace),
+                    "timestamp": datetime.now().isoformat(),
+                    "source": "argocd",
+                    "details": pod.get("details", {})
+                })
+                issue_groups[f"{alert_name}_argo"]["count"] += 1
+
     app.logger.debug(f"[DEBUG] Issue groups = {issue_groups}")
     return jsonify(list(issue_groups.values()))
+
+@app.route('/api/analyze/argocd/<app_name>')
+def analyze_argocd_app(app_name):
+    """
+    Returns a structured JSON describing the analysis for an ArgoCD application.
+    """
+    try:
+        # Get application status
+        status = argocd_tool.get_application_status(app_name)
+        
+        # Get recent events
+        events = argocd_tool.get_application_events(app_name, hours=6)
+        
+        # Call LLM for a diagnosis
+        metadata = {
+            "app_name": app_name,
+            "status": status,
+            "events": events
+        }
+        llm_response = llm_agent.diagnose_argocd_app(metadata)
+        
+        # For demonstration, we'll do a quick naive parse
+        # of the LLM's text to separate root causes & recommended actions.
+        root_cause = []
+        runbook = []
+
+        if "Root Cause:" in llm_response and "Recommended Actions:" in llm_response:
+            # naive splitting
+            root_cause_text = llm_response.split("Root Cause:")[1].split("Recommended Actions:")[0]
+            runbook_text = llm_response.split("Recommended Actions:")[1]
+
+            root_cause = [line.strip()
+                         for line in root_cause_text.strip().split("\n") if line.strip()]
+            runbook = [line.strip()
+                      for line in runbook_text.strip().split("\n") if line.strip()]
+        else:
+            # fallback if we can't parse properly
+            root_cause = [llm_response]
+            runbook = ["No structured runbook found."]
+        
+        # Build the analysis result
+        analysis_result = {
+            "app_name": app_name,
+            "health_status": status.get("health", {}).get("status", "Unknown"),
+            "sync_status": status.get("sync", {}).get("status", "Unknown"),
+            "root_cause": root_cause,
+            "recommended_actions": runbook,
+            "app_events": [event.get("message", "") for event in events],
+            "operation_state": status.get("operationState", {}),
+            "raw_llm_output": llm_response
+        }
+        
+        return jsonify({"analysis": analysis_result})
+    except Exception as e:
+        app.logger.error(f"Error analyzing ArgoCD application '{app_name}': {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/analyze/<issue_type>')
 def analyze_issue(issue_type):
@@ -470,9 +608,11 @@ def get_data_sources():
     sources = [
         {"id": "all", "name": "All Sources", "description": "Data from all available sources"},
         {"id": "kubernetes", "name": "Kubernetes", "description": "Pod events from Kubernetes API"},
-        {"id": "prometheus", "name": "Prometheus", "description": "Metrics and alerts from Prometheus"}
+        {"id": "prometheus", "name": "Prometheus", "description": "Metrics and alerts from Prometheus"},
+        {"id": "argocd", "name": "ArgoCD", "description": "Application deployments and sync status from ArgoCD"}
     ]
     return jsonify(sources)
+
 
 if __name__ == '__main__':
     app.run(debug=True)
