@@ -510,36 +510,6 @@
     });
   }
 
-  // Function to switch between tabs
-  function switchTab(tabName) {
-    state.activeTab = tabName;
-    
-    // Update active tab styling
-    elements.groupedEventsTab.classList.toggle('active', tabName === 'grouped');
-    elements.eventStreamTab.classList.toggle('active', tabName === 'stream');
-    
-    // Update table headers for the appropriate view
-    if (tabName === 'grouped') {
-      elements.tableHead.innerHTML = `
-        <th>Priority</th>
-        <th>Alert</th>
-        <th>Events</th>
-        <th>Latest</th>
-        <th>Latest event</th>
-      `;
-      renderGroupedEvents();
-    } else {
-      elements.tableHead.innerHTML = `
-        <th>Priority</th>
-        <th>Alert Type</th>
-        <th>Pod</th>
-        <th>Namespace</th>
-        <th>Timestamp</th>
-      `;
-      renderEventStream();
-    }
-  }
-
   // Filter data based on active filters
   function applyFilters() {
     // Starting with all data
@@ -642,6 +612,138 @@
     KuberaUtils.renderTimelineTracks(state.groupedEvents);
   }
 
+  // Function to switch between tabs
+  function switchTab(tabName) {
+    state.activeTab = tabName;
+    
+    // Update active tab styling
+    elements.groupedEventsTab.classList.toggle('active', tabName === 'grouped');
+    elements.eventStreamTab.classList.toggle('active', tabName === 'stream');
+    
+    // Update table headers for the appropriate view
+    if (tabName === 'grouped') {
+      elements.tableHead.innerHTML = `
+        <th>Priority</th>
+        <th>Alert</th>
+        <th>Source</th>
+        <th>Events</th>
+        <th>Latest</th>
+        <th>Latest event</th>
+      `;
+      renderGroupedEvents();
+    } else {
+      elements.tableHead.innerHTML = `
+        <th>Priority</th>
+        <th>Alert Type</th>
+        <th>Pod</th>
+        <th>Namespace</th>
+        <th>Source</th>
+        <th>Timestamp</th>
+      `;
+      renderEventStream();
+    }
+  }
+
+  // Function to render grouped events
+  function renderGroupedEvents() {
+    if (!elements.tableBody) return;
+    
+    elements.tableBody.innerHTML = '';
+    
+    if (state.groupedEvents.length === 0) {
+      elements.tableBody.innerHTML = `<tr><td colspan="6" style="text-align: center;">No events found for the selected filters</td></tr>`;
+      return;
+    }
+    
+    state.groupedEvents.forEach(issue => {
+      // Determine badge class based on severity
+      const severityText = (issue.severity || '').toUpperCase();
+      let badgeClass = 'badge-low'; // default
+      if (issue.severity === 'high') {
+        badgeClass = 'badge-high';
+      } else if (issue.severity === 'medium') {
+        badgeClass = 'badge-medium';
+      }
+
+      // Find the latest timestamp from the pods
+      let latestPod = null;
+      if (issue.pods && issue.pods.length > 0) {
+        latestPod = issue.pods.reduce((acc, p) => {
+          if (!acc) return p;
+          const accTime = new Date(acc.timestamp || acc.start);
+          const pTime = new Date(p.timestamp || p.start);
+          return pTime > accTime ? p : acc;
+        }, null);
+      }
+      
+      // Format source for display
+      const sourceText = issue.source === 'prometheus' 
+        ? '<span class="badge-prometheus">Prometheus</span>' 
+        : '<span class="badge-kubernetes">Kubernetes</span>';
+      
+      // Set up the onclick with source info
+      const sourceParam = issue.source === 'prometheus' ? 'prometheus' : 'kubernetes';
+      
+      // Build the row
+      const row = document.createElement('tr');
+      row.setAttribute('onclick', `openAnalysisPanel('${issue.name}', '${sourceParam}')`);
+      row.innerHTML = `
+        <td><span class="badge ${badgeClass}">${severityText}</span></td>
+        <td>${issue.name}</td>
+        <td>${sourceText}</td>
+        <td>View ${issue.count} events</td>
+        <td>${latestPod ? KuberaUtils.formatTimestamp(latestPod.timestamp || latestPod.start) : '-'}</td>
+        <td>${latestPod ? 'Pod ' + latestPod.name : '-'}</td>
+      `;
+
+      elements.tableBody.appendChild(row);
+    });
+  }
+
+  // Function to render individual event stream
+  function renderEventStream() {
+    if (!elements.tableBody) return;
+    
+    elements.tableBody.innerHTML = '';
+    
+    if (state.individualEvents.length === 0) {
+      elements.tableBody.innerHTML = `<tr><td colspan="6" style="text-align: center;">No events found for the selected filters</td></tr>`;
+      return;
+    }
+    
+    state.individualEvents.forEach(event => {
+      // Determine badge class based on severity
+      const severityText = (event.severity || '').toUpperCase();
+      let badgeClass = 'badge-low'; // default
+      if (event.severity === 'high') {
+        badgeClass = 'badge-high';
+      } else if (event.severity === 'medium') {
+        badgeClass = 'badge-medium';
+      }
+      
+      // Format source for display
+      const sourceText = event.source === 'prometheus' 
+        ? '<span class="badge-prometheus">Prometheus</span>' 
+        : '<span class="badge-kubernetes">Kubernetes</span>';
+      
+      // Set up the onclick with source info
+      const sourceParam = event.source === 'prometheus' ? 'prometheus' : 'kubernetes';
+      
+      // Build the row
+      const row = document.createElement('tr');
+      row.setAttribute('onclick', `openAnalysisPanel('${event.alertType}', '${sourceParam}')`);
+      row.innerHTML = `
+        <td><span class="badge ${badgeClass}">${severityText}</span></td>
+        <td>${event.alertType}</td>
+        <td>${event.pod}</td>
+        <td>${event.namespace}</td>
+        <td>${sourceText}</td>
+        <td>${KuberaUtils.formatTimestamp(event.timestamp)}</td>
+      `;
+
+      elements.tableBody.appendChild(row);
+    });
+  }
   // Function to update namespace filters with any missing namespaces
   function updateNamespaceFilters(namespaces) {
     const namespaceSection = document.querySelector('.filter-section:nth-child(2) .filter-tags');
@@ -732,105 +834,6 @@
     
     // Apply initial filters (which defaults to "All")
     applyFilters();
-  }
-
-  // Function to render grouped events
-  function renderGroupedEvents() {
-    if (!elements.tableBody) return;
-    
-    elements.tableBody.innerHTML = '';
-    
-    if (state.groupedEvents.length === 0) {
-      elements.tableBody.innerHTML = `<tr><td colspan="5" style="text-align: center;">No events found for the selected filters</td></tr>`;
-      return;
-    }
-    
-    state.groupedEvents.forEach(issue => {
-      // Determine badge class based on severity
-      const severityText = (issue.severity || '').toUpperCase();
-      let badgeClass = 'badge-low'; // default
-      if (issue.severity === 'high') {
-        badgeClass = 'badge-high';
-      } else if (issue.severity === 'medium') {
-        badgeClass = 'badge-medium';
-      }
-
-      // Find the latest timestamp from the pods
-      let latestPod = null;
-      if (issue.pods && issue.pods.length > 0) {
-        latestPod = issue.pods.reduce((acc, p) => {
-          if (!acc) return p;
-          const accTime = new Date(acc.timestamp || acc.start);
-          const pTime = new Date(p.timestamp || p.start);
-          return pTime > accTime ? p : acc;
-        }, null);
-      }
-      
-      // Add source tag if from Prometheus
-      const sourceTag = issue.source === 'prometheus' 
-        ? `<span class="source-tag">Prometheus</span>` 
-        : '';
-      
-      // Set up the onclick with source info
-      const sourceParam = issue.source === 'prometheus' ? 'prometheus' : 'kubernetes';
-      
-      // Build the row
-      const row = document.createElement('tr');
-      row.setAttribute('onclick', `openAnalysisPanel('${issue.name}', '${sourceParam}')`);
-      row.innerHTML = `
-        <td><span class="badge ${badgeClass}">${severityText}</span></td>
-        <td>${issue.name} ${sourceTag}</td>
-        <td>View ${issue.count} events</td>
-        <td>${latestPod ? KuberaUtils.formatTimestamp(latestPod.timestamp || latestPod.start) : '-'}</td>
-        <td>${latestPod ? 'Pod ' + latestPod.name : '-'}</td>
-      `;
-
-      elements.tableBody.appendChild(row);
-    });
-  }
-
-  // Function to render individual event stream
-  function renderEventStream() {
-    if (!elements.tableBody) return;
-    
-    elements.tableBody.innerHTML = '';
-    
-    if (state.individualEvents.length === 0) {
-      elements.tableBody.innerHTML = `<tr><td colspan="5" style="text-align: center;">No events found for the selected filters</td></tr>`;
-      return;
-    }
-    
-    state.individualEvents.forEach(event => {
-      // Determine badge class based on severity
-      const severityText = (event.severity || '').toUpperCase();
-      let badgeClass = 'badge-low'; // default
-      if (event.severity === 'high') {
-        badgeClass = 'badge-high';
-      } else if (event.severity === 'medium') {
-        badgeClass = 'badge-medium';
-      }
-      
-      // Add source tag if from Prometheus
-      const sourceTag = event.source === 'prometheus' 
-        ? `<span class="source-tag">Prometheus</span>` 
-        : '';
-      
-      // Set up the onclick with source info
-      const sourceParam = event.source === 'prometheus' ? 'prometheus' : 'kubernetes';
-      
-      // Build the row
-      const row = document.createElement('tr');
-      row.setAttribute('onclick', `openAnalysisPanel('${event.alertType}', '${sourceParam}')`);
-      row.innerHTML = `
-        <td><span class="badge ${badgeClass}">${severityText}</span></td>
-        <td>${event.alertType} ${sourceTag}</td>
-        <td>${event.pod}</td>
-        <td>${event.namespace}</td>
-        <td>${KuberaUtils.formatTimestamp(event.timestamp)}</td>
-      `;
-
-      elements.tableBody.appendChild(row);
-    });
   }
 
   // Initialize when DOM is fully loaded

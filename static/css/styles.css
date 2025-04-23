@@ -594,15 +594,43 @@ body {
   border-left: 6px solid currentColor; /* re‑uses severity colour */
 }
 
-/* Prometheus-specific styles */
-.prometheus-event {
-  border: 2px dashed white;
-  opacity: 0.9;
+.badge-kubernetes {
+  background-color: rgba(56, 114, 242, 0.15);
+  color: #5794ff;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-block;
 }
 
 .badge-prometheus {
   background-color: rgba(240, 96, 40, 0.15);
   color: #f06028;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  display: inline-block;
+}
+
+/* Table adjustments for the new column */
+.events-table th, .events-table td {
+  padding: 8px 12px; /* Slightly reduced padding */
+}
+
+/* Highligh rows on hover with source-specific colors */
+.events-table tr:hover.prometheus-row {
+  background-color: rgba(240, 96, 40, 0.05);
+}
+
+.events-table tr:hover.kubernetes-row {
+  background-color: rgba(56, 114, 242, 0.05);
+}
+/* Prometheus-specific styles */
+.prometheus-event {
+  border: 2px dashed white;
+  opacity: 0.9;
 }
 
 .source-tag {
