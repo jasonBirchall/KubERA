@@ -90,7 +90,7 @@ test-prometheus:
 ## Reset the database to apply schema changes
 reset-db:
 	@echo "Resetting Kubera database..."
-	python reset_db.py
+	uv run python reset_db.py
 	@echo "✅ Database reset complete"
 
 install-argocd:
@@ -128,11 +128,61 @@ create-demo-apps:
 	kubectl apply -f k8s/argocd-demo-apps.yaml
 	@echo "✅ Demo applications created"
 
-## Bring up everything in one command:
-## 1) Create cluster, 2) Deploy app, 3) Expose service
-up: cluster-up demo-app-up demo-app-expose
+## Set up entire environment with cluster, apps, Prometheus, and ArgoCD
+setup-all: check-api-key reset-db cluster-up install-prometheus install-argocd-core wait-for-argocd install-argocd-apps create-demo-apps demo-app-up create-many-failures
 	@echo "================================================="
-	@echo "All done! The cluster is up, and the service is running."
-	@echo "You can try it by visiting: http://localhost:$(LOCAL_PORT)"
+	@echo "✅ All done! Your complete environment is ready."
+	@echo ""
+	@echo "Access the dashboard:           http://localhost:$(DASHBOARD_PORT)"
+	@echo "Access Prometheus:              http://localhost:30090"
+	@echo "Access ArgoCD:                  http://localhost:30080"
+	@echo "ArgoCD admin username:          admin"
+	@echo "For ArgoCD password, run:       kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath=\"{.data.password}\" | base64 -d"
+	@echo ""
+	@echo "To port-forward services:"
+	@echo "  Prometheus: make prometheus-port-forward"
+	@echo "  ArgoCD:     make argocd-port-forward"
 	@echo "================================================="
+
+## Install just the core ArgoCD components without applications
+install-argocd-core:
+	@echo "Installing core ArgoCD components in 'argocd' namespace..."
+	@kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+	@kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+	@echo "Core ArgoCD components installation initiated"
+
+## Install the demo app in ArgoCD after CRDs are available
+install-argocd-apps:
+	@echo "Installing ArgoCD demo applications..."
+	@kubectl apply -f k8s/argocd.yaml || true
+	@echo "ArgoCD demo applications installed"
+
+## Wait for ArgoCD components to be ready
+wait-for-argocd:
+	@echo "Waiting for ArgoCD components to start (this may take a few minutes)..."
+	@kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd || true
+	@kubectl wait --for=condition=available --timeout=300s deployment/argocd-repo-server -n argocd || true
+	@kubectl wait --for=condition=available --timeout=300s deployment/argocd-application-controller -n argocd || true
+	@echo "✅ ArgoCD components are ready"
+
+## Destroy the entire environment and clean up all resources
+destroy-all: 
+	@echo "Starting clean-up of all resources..."
+	@echo "Removing failing pods..."
+	@kubectl delete -f k8s/broken-pod.yaml || true
+	@echo "Removing demo applications..."
+	@kubectl delete deployment $(DEMO_APP_DEPLOYMENT) || true
+	@kubectl delete deployment $(BROKEN_DEMO_APP_DEPLOYMENT) || true
+	@kubectl delete service $(DEMO_APP_DEPLOYMENT) || true
+	@echo "Removing ArgoCD applications..."
+	@kubectl delete -f k8s/argocd-demo-apps.yaml || true
+	@echo "Uninstalling ArgoCD..."
+	@kubectl delete -f k8s/argocd.yaml || true
+	@echo "Removing Prometheus..."
+	@kubectl delete -f k8s/prometheus.yaml || true
+	@echo "Deleting kind cluster named '$(CLUSTER_NAME)'..."
+	@kind delete cluster --name $(CLUSTER_NAME)
+	@echo "Resetting database..."
+	@rm -f kubera.db || true
+	@echo "✅ Environment destroyed successfully"
 
