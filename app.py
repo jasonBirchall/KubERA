@@ -15,7 +15,7 @@ from agent.tools.argocd_tool import ArgoCDTool
 
 k8s_tool = K8sTool()
 prometheus_tool = PrometheusTool()  # Using default localhost:9090
-argocd_tool = ArgoCDTool(base_url="http://localhost:8080")
+argocd_tool = ArgoCDTool(base_url="http://localhost:8501")
 llm_agent = LlmAgent()
     
 app = Flask(__name__)
@@ -182,58 +182,42 @@ def get_timeline_data():
             record_failure(namespace, pod, issue, severity, first_seen, last_seen, source="kubernetes")
 
     if data_source in ['all', 'argocd']:
-        try:
-            # Get ArgoCD alerts
-            argocd_alerts = argocd_tool.get_application_alerts(hours)
-            app.logger.debug(f"[DEBUG] ArgoCD alerts = {argocd_alerts}")
+        # Get ArgoCD alerts
+        argocd_alerts = argocd_tool.get_application_alerts(hours)
+        app.logger.debug(f"[DEBUG] ArgoCD alerts = {argocd_alerts}")
+        
+        # Verify alerts have the correct source
+        for alert in argocd_alerts:
+            # Make sure the alert has the source set to 'argocd'
+            if alert.get('source') != 'argocd':
+                alert['source'] = 'argocd'
             
-            # Verify alerts have the correct source
-            for alert in argocd_alerts:
-                # Make sure the alert has the source set to 'argocd'
-                if alert.get('source') != 'argocd':
-                    alert['source'] = 'argocd'
-                
-                # Make sure all pods have the source set to 'argocd'
-                for pod in alert.get('pods', []):
-                    if pod.get('source') != 'argocd':
-                        pod['source'] = 'argocd'
-        except Exception as e:
-            app.logger.warning(f"[WARNING] Error fetching ArgoCD alerts: {e}. Using synthetic data.")
-            # Fall back to synthetic data
-            argocd_alerts = argocd_tool.generate_synthetic_alerts()
+            # Make sure all pods have the source set to 'argocd'
+            for pod in alert.get('pods', []):
+                if pod.get('source') != 'argocd':
+                    pod['source'] = 'argocd'
 
     # Similar check in the get_cluster_issues function:
     if data_source in ['all', 'argocd']:
-        try:
-            # Get ArgoCD alerts
-            argocd_alerts = argocd_tool.get_application_alerts(hours=1)
-            app.logger.debug(f"[DEBUG] ArgoCD alerts = {argocd_alerts}")
+        argocd_alerts = argocd_tool.get_application_alerts(hours=1)
+        app.logger.debug(f"[DEBUG] ArgoCD alerts = {argocd_alerts}")
+        
+        # Verify alerts have the correct source
+        for alert in argocd_alerts:
+            # Make sure the alert has the source set to 'argocd'
+            if alert.get('source') != 'argocd':
+                alert['source'] = 'argocd'
             
-            # Verify alerts have the correct source
-            for alert in argocd_alerts:
-                # Make sure the alert has the source set to 'argocd'
-                if alert.get('source') != 'argocd':
-                    alert['source'] = 'argocd'
-                
-                # Make sure all pods have the source set to 'argocd'
-                for pod in alert.get('pods', []):
-                    if pod.get('source') != 'argocd':
-                        pod['source'] = 'argocd'
-        except Exception as e:
-            app.logger.warning(f"[WARNING] Error fetching ArgoCD alerts: {e}. Using synthetic data.")
-            # Fall back to synthetic data
-            argocd_alerts = argocd_tool.generate_synthetic_alerts()
+            # Make sure all pods have the source set to 'argocd'
+            for pod in alert.get('pods', []):
+                if pod.get('source') != 'argocd':
+                    pod['source'] = 'argocd'
 
     # Get Prometheus data if requested
     if data_source in ['all', 'prometheus']:
-        try:
-            # Attempt to get real Prometheus data
-            prom_alerts = prometheus_tool.get_pod_alerts(hours, namespace)
-            app.logger.debug(f"[DEBUG] Prometheus alerts = {prom_alerts}")
-        except Exception as e:
-            app.logger.warning(f"[WARNING] Error fetching Prometheus alerts: {e}. Using synthetic data.")
-            # Fall back to synthetic data
-            prom_alerts = prometheus_tool.generate_synthetic_data()
+        # Attempt to get real Prometheus data
+        prom_alerts = prometheus_tool.get_pod_alerts(hours, namespace)
+        app.logger.debug(f"[DEBUG] Prometheus alerts = {prom_alerts}")
 
         # Process Prometheus alerts
         for alert in prom_alerts:
@@ -326,24 +310,15 @@ def timeline_history():
 def get_prometheus_data():
     """
     Returns data from Prometheus.
-    This can be used to get specific metrics or generated synthetic data.
+    This can be used to get specific metrics
     """
     hours = request.args.get('hours', 6, type=int)
     namespace = request.args.get('namespace', None)
-    synthetic = request.args.get('synthetic', 'false').lower() == 'true'
     
-    try:
-        if synthetic:
-            # Generate synthetic data for demo/testing
-            data = prometheus_tool.generate_synthetic_data()
-        else:
-            # Get real data from Prometheus
-            data = prometheus_tool.get_pod_alerts(hours, namespace)
+    # Get real data from Prometheus
+    data = prometheus_tool.get_pod_alerts(hours, namespace)
         
-        return jsonify(data)
-    except Exception as e:
-        app.logger.error(f"Error getting Prometheus data: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+    return jsonify(data)
 
 @app.route('/api/cluster_issues')
 def get_cluster_issues():
@@ -380,14 +355,7 @@ def get_cluster_issues():
     
     # Get Prometheus data if requested
     if data_source in ['all', 'prometheus']:
-        try:
-            # Try to get real Prometheus data
-            prom_alerts = prometheus_tool.get_pod_alerts(hours=1, namespace=namespace)
-        except Exception as e:
-            app.logger.warning(f"[WARNING] Error fetching Prometheus alerts: {e}. Using synthetic data.")
-            # Fall back to synthetic data
-            prom_alerts = prometheus_tool.generate_synthetic_data()
-        
+        prom_alerts = prometheus_tool.get_pod_alerts(hours=1, namespace=namespace)
         # Process Prometheus alerts
         for alert in prom_alerts:
             alert_name = alert["name"]
@@ -413,14 +381,7 @@ def get_cluster_issues():
 
     # Get ArgoCD data if requested
     if data_source in ['all', 'argocd']:
-        try:
-            # Get ArgoCD alerts
-            argocd_alerts = argocd_tool.get_application_alerts(hours=1)
-            app.logger.debug(f"[DEBUG] ArgoCD alerts = {argocd_alerts}")
-        except Exception as e:
-            app.logger.warning(f"[WARNING] Error fetching ArgoCD alerts: {e}. Using synthetic data.")
-            # Fall back to synthetic data
-            argocd_alerts = argocd_tool.generate_synthetic_alerts()
+        argocd_alerts = argocd_tool.get_application_alerts(hours=1)
         
         # Process ArgoCD alerts
         for alert in argocd_alerts:
@@ -515,16 +476,9 @@ def analyze_issue(issue_type):
         namespace = "default"  # or glean from request/query param
         source = request.args.get('source', 'kubernetes')  # The data source to analyze
         
+        broken_pods = []
         if source == 'kubernetes':
             broken_pods = k8s_tool.list_broken_pods(namespace=namespace)
-        else:
-            # For Prometheus alerts, we'd need to query the specific pods
-            # For demo/simplicity, use synthetic data
-            prom_data = prometheus_tool.generate_synthetic_data()
-            broken_pods = []
-            for alert in prom_data:
-                if alert["name"] == issue_type:
-                    broken_pods.extend([pod["name"] for pod in alert.get("pods", [])])
 
         analysis_results = []
         for pod_name in broken_pods:
