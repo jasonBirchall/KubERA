@@ -82,7 +82,10 @@ destroy-prometheus:
 
 prometheus-port-forward:
 	kubectl port-forward -n monitoring service/prometheus-service 9090:9090
-	
+
+test-prometheus:
+	@echo "Testing Prometheus connection and metrics..."
+	uv run test_prometheus.py
 
 ## Reset the database to apply schema changes
 reset-db:
