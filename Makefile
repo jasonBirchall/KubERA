@@ -84,10 +84,11 @@ prometheus-port-forward:
 	kubectl port-forward -n monitoring service/prometheus-service 9090:9090
 	
 
-db-reset:                     ## DELETE FROM every table in the DB
-	@echo "Truncating $(DB_FILE)…"
-	@sqlite3 $(DB_FILE) "PRAGMA foreign_keys=OFF; DELETE FROM pod_alerts;"
-	@echo "✅  All rows deleted."
+## Reset the database to apply schema changes
+reset-db:
+	@echo "Resetting Kubera database..."
+	python reset_db.py
+	@echo "✅ Database reset complete"
 
 ## Bring up everything in one command:
 ## 1) Create cluster, 2) Deploy app, 3) Expose service

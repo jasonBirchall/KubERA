@@ -11,6 +11,7 @@ const KuberaUtils = (function() {
     activeTab: 'grouped', // Default active tab
     activeNamespace: 'All', // Default namespace filter
     activePriority: 'All', // Default priority filter
+    activeSource: 'all', // Default data source filter - 'all', 'kubernetes', 'prometheus'
     currentCluster: '', // Current selected cluster
     showingAllNamespaces: false, // Whether we're showing all namespaces or just the first few
     selectedHours: 6, // Default time range
@@ -42,7 +43,7 @@ const KuberaUtils = (function() {
   // Fetch timeline data from API
   function fetchTimelineData() {
     console.log('Fetching timeline data...');
-    return fetch(`/api/timeline_data?hours=${state.selectedHours}`)
+    return fetch(`/api/timeline_data?hours=${state.selectedHours}&source=${state.activeSource}`)
       .then(response => response.json())
       .then(data => {
         console.log('Timeline data received:', data);
@@ -56,7 +57,7 @@ const KuberaUtils = (function() {
 
   // Fetch timeline history
   function fetchTimelineHistory() {
-    return fetch(`/api/timeline_history?hours=${state.selectedHours}`)
+    return fetch(`/api/timeline_history?hours=${state.selectedHours}&source=${state.activeSource}`)
       .then(r => r.json())
       .then(data => {
         return data;
@@ -67,9 +68,23 @@ const KuberaUtils = (function() {
       });
   }
 
+  // Fetch Prometheus data
+  function fetchPrometheusData() {
+    return fetch(`/api/prometheus_data?hours=${state.selectedHours}`)
+      .then(response => response.json())
+      .then(data => {
+        console.log('Prometheus data received:', data);
+        return data;
+      })
+      .catch(error => {
+        console.error('Error fetching Prometheus data:', error);
+        return [];
+      });
+  }
+
   // Fetch cluster issues
   function fetchClusterIssues() {
-    return fetch('/api/cluster_issues')
+    return fetch(`/api/cluster_issues?source=${state.activeSource}`)
       .then(response => response.json())
       .then(issues => {
         return issues;
@@ -77,6 +92,24 @@ const KuberaUtils = (function() {
       .catch(error => {
         console.error('Error fetching cluster issues:', error);
         return [];
+      });
+  }
+
+  // Fetch available data sources
+  function fetchDataSources() {
+    return fetch('/api/sources')
+      .then(response => response.json())
+      .then(sources => {
+        return sources;
+      })
+      .catch(error => {
+        console.error('Error fetching data sources:', error);
+        // Fallback sources
+        return [
+          {id: 'all', name: 'All Sources'},
+          {id: 'kubernetes', name: 'Kubernetes'},
+          {id: 'prometheus', name: 'Prometheus'}
+        ];
       });
   }
 
@@ -131,9 +164,12 @@ const KuberaUtils = (function() {
       const track = document.createElement('div');
       track.className = 'timeline-track';
 
+      // Add source indicator to the title if it's from Prometheus
+      const sourceIndicator = issue.source === 'prometheus' ? ' [Prometheus]' : '';
+      
       const title = document.createElement('div');
       title.className = 'timeline-track-title';
-      title.textContent = `${issue.name} (${issue.count})`;
+      title.textContent = `${issue.name}${sourceIndicator} (${issue.count})`;
       track.appendChild(title);
 
       if (issue.pods?.length) {
@@ -150,15 +186,30 @@ const KuberaUtils = (function() {
 
           ev.className = `timeline-event ${issue.severity || 'low'}`
                       + (pod.end ? '' : ' ongoing');
+          
+          // Add a special class for Prometheus events
+          if (pod.source === 'prometheus' || issue.source === 'prometheus') {
+            ev.classList.add('prometheus-event');
+          }
+          
           ev.style.left  = `${leftPct}%`;
           ev.style.width = `${widthPct}%`;
           ev.title = [
             `Pod: ${pod.name}`,
             `Namespace: ${pod.namespace}`,
+            `Source: ${pod.source || issue.source || 'kubernetes'}`,
             `Started: ${new Date(pod.start).toLocaleString()}`,
             pod.end ? `Ended: ${new Date(pod.end).toLocaleString()}`
                     : 'Still occurring'
           ].join('\n');
+
+          // Add click handler that includes source info
+          ev.addEventListener('click', function() {
+            // Extract issue type from timeline
+            const sourceParam = (pod.source === 'prometheus' || issue.source === 'prometheus') 
+              ? 'prometheus' : 'kubernetes';
+            openAnalysisPanel(issue.name, sourceParam);
+          });
 
           track.appendChild(ev);
         });
@@ -274,8 +325,64 @@ const KuberaUtils = (function() {
       });
     }
     
+    // Initialize data source filters
+    initializeDataSources(refreshCallback);
+    
     // Mark as initialized
     dropdownsInitialized = true;
+  }
+  
+  // Initialize data source filters
+  function initializeDataSources(refreshCallback) {
+    // Fetch available data sources
+    fetchDataSources().then(sources => {
+      // Find the source filter section
+      const sourceFilterSection = document.querySelector('.filter-section:nth-child(5)');
+      if (!sourceFilterSection) return;
+      
+      const filterTagsContainer = sourceFilterSection.querySelector('.filter-tags');
+      if (!filterTagsContainer) return;
+      
+      // Clear existing tags
+      filterTagsContainer.innerHTML = '';
+      
+      // Add source tags
+      sources.forEach(source => {
+        const tag = document.createElement('div');
+        tag.className = 'filter-tag' + (source.id === state.activeSource ? ' active' : '');
+        tag.textContent = source.name;
+        tag.dataset.sourceId = source.id;
+        
+        if (source.id === state.activeSource) {
+          tag.style.backgroundColor = '#3872f2';
+          tag.style.color = 'white';
+        }
+        
+        tag.addEventListener('click', function() {
+          // Update active state for all tags
+          filterTagsContainer.querySelectorAll('.filter-tag').forEach(t => {
+            t.classList.remove('active');
+            t.style.backgroundColor = '';
+            t.style.color = '';
+          });
+          
+          // Activate this tag
+          this.classList.add('active');
+          this.style.backgroundColor = '#3872f2';
+          this.style.color = 'white';
+          
+          // Update state
+          state.activeSource = this.dataset.sourceId;
+          
+          // Refresh data if callback provided
+          if (refreshCallback && typeof refreshCallback === 'function') {
+            refreshCallback();
+          }
+        });
+        
+        filterTagsContainer.appendChild(tag);
+      });
+    });
   }
   
   // Initialize utility module
@@ -285,8 +392,36 @@ const KuberaUtils = (function() {
     // Initialize dropdowns
     initializeDropdowns(refreshCallback);
     
+    // Add CSS for Prometheus events
+    addPrometheusStyles();
+    
     // Mark as initialized
     initialized = true;
+  }
+  
+  // Add CSS styles for Prometheus events
+  function addPrometheusStyles() {
+    const style = document.createElement('style');
+    style.textContent = `
+      .prometheus-event {
+        border: 2px dashed white;
+        opacity: 0.9;
+      }
+      .badge-prometheus {
+        background-color: rgba(240, 96, 40, 0.15);
+        color: #f06028;
+      }
+      .source-tag {
+        display: inline-block;
+        font-size: 10px;
+        margin-left: 4px;
+        padding: 1px 4px;
+        border-radius: 3px;
+        background-color: rgba(240, 96, 40, 0.1);
+        color: #f06028;
+      }
+    `;
+    document.head.appendChild(style);
   }
 
   // Public API
@@ -297,18 +432,113 @@ const KuberaUtils = (function() {
     percentAlong,
     fetchTimelineData,
     fetchTimelineHistory,
+    fetchPrometheusData,
     fetchClusterIssues,
     fetchKubeContexts,
     fetchNamespaces,
+    fetchDataSources,
     renderTimelineTracks,
     updateTimelineRuler,
     startAutoRefresh,
     stopAutoRefresh,
     clearSearchFilter,
     initialize,
-    initializeDropdowns
+    initializeDropdowns,
+    initializeDataSources
   };
 })();
 
 // Export for global use
 window.KuberaUtils = KuberaUtils;
+
+// Update the analysis panel open function to include source parameter
+function openAnalysisPanel(issueType, source = 'kubernetes') {
+  const panel = document.getElementById('analysisPanel');
+  const title = panel.querySelector('.analysis-title');
+  const content = panel.querySelector('.analysis-content');
+  
+  const sourceLabel = source === 'prometheus' ? ' [Prometheus]' : '';
+  title.textContent = `Investigating alert: ${issueType}${sourceLabel}`;
+  content.innerHTML = '<div style="text-align: center; padding: 20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Loading analysis...</p></div>';
+  
+  // Show the panel
+  panel.classList.add('open');
+  
+  // Fetch analysis data for this issue type
+  fetch(`/api/analyze/${issueType}?source=${source}`)
+    .then(response => response.json())
+    .then(data => {
+      renderAnalysis(data, source);
+    })
+    .catch(error => {
+      content.innerHTML = `<div class="error-message">Error loading analysis: ${error.message}</div>`;
+    });
+}
+
+// Close the analysis panel
+function closeAnalysisPanel() {
+  const panel = document.getElementById('analysisPanel');
+  panel.classList.remove('open');
+}
+
+// Render the analysis data in the panel
+function renderAnalysis(data, source = 'kubernetes') {
+  const content = document.querySelector('.analysis-content');
+  
+  if (!data || !data.analysis || data.analysis.length === 0) {
+    content.innerHTML = `<div class="error-message">No analysis data available</div>`;
+    return;
+  }
+  
+  let html = '';
+  
+  // Add source indicator if it's from Prometheus
+  const sourceClass = source === 'prometheus' ? 'prometheus-source' : '';
+  const sourceInfo = source === 'prometheus' ? 
+    `<div class="section-info" style="margin-bottom: 15px; color: #f06028;">
+      <i class="fas fa-chart-line"></i> This analysis is based on Prometheus metrics data.
+     </div>` : '';
+  
+  data.analysis.forEach(result => {
+    html += `
+      <div class="analysis-section ${sourceClass}">
+        <div class="section-title">Pod: ${result.pod_name}</div>
+        ${sourceInfo}
+        
+        <div class="analysis-subsection">
+          <h4>Root Cause</h4>
+          <ul class="root-cause-list">
+            ${result.root_cause.map(cause => `<li>${cause}</li>`).join('')}
+          </ul>
+        </div>
+        
+        <div class="analysis-subsection">
+          <h4>Recommended Actions</h4>
+          <ul class="root-cause-list">
+            ${result.recommended_actions.map(action => `<li>${action}</li>`).join('')}
+          </ul>
+        </div>
+        
+        <div class="analysis-subsection">
+          <h4>Events</h4>
+          <div class="logs-container">
+            ${result.pod_events && result.pod_events.length > 0 
+              ? result.pod_events.map(event => `<div class="log-line">${event}</div>`).join('')
+              : '<div class="log-line">No events available</div>'}
+          </div>
+        </div>
+        
+        <div class="analysis-subsection">
+          <h4>Recent Logs</h4>
+          <div class="logs-container">
+            ${result.logs_excerpt && result.logs_excerpt.length > 0
+              ? result.logs_excerpt.map(log => `<div class="log-line">${log}</div>`).join('')
+              : '<div class="log-line">No logs available</div>'}
+          </div>
+        </div>
+      </div>
+    `;
+  });
+  
+  content.innerHTML = html;
+}

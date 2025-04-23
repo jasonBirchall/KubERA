@@ -1,19 +1,15 @@
 ```bash
-```
-CREATE TABLE pod_alerts (
-    id           SERIAL PRIMARY KEY,          -- or INTEGER if SQLite
-    namespace    TEXT NOT NULL,
-    pod_name     TEXT NOT NULL,
-    issue_type   TEXT NOT NULL,
-    severity     TEXT NOT NULL,
-    first_seen   TIMESTAMPTZ NOT NULL,
-    last_seen    TIMESTAMPTZ,                 -- NULL ⇒ still ongoing
-    UNIQUE (namespace, pod_name, issue_type, first_seen)
+CREATE TABLE IF NOT EXISTS pod_alerts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    namespace   TEXT NOT NULL,
+    pod_name    TEXT NOT NULL,
+    issue_type  TEXT NOT NULL,
+    severity    TEXT NOT NULL,
+    first_seen  TEXT NOT NULL,      -- iso‑string
+    last_seen   TEXT,               -- NULL ⇒ ongoing
+    source      TEXT DEFAULT 'kubernetes',  -- 'kubernetes' or 'prometheus'
+    UNIQUE (namespace, pod_name, issue_type, first_seen, source)
 );
-
-CREATE INDEX ON pod_alerts (issue_type);
-CREATE INDEX ON pod_alerts (first_seen);
-```
 ```
 
 Why this shape?

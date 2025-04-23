@@ -594,3 +594,69 @@ body {
   border-left: 6px solid currentColor; /* re‑uses severity colour */
 }
 
+/* Prometheus-specific styles */
+.prometheus-event {
+  border: 2px dashed white;
+  opacity: 0.9;
+}
+
+.badge-prometheus {
+  background-color: rgba(240, 96, 40, 0.15);
+  color: #f06028;
+}
+
+.source-tag {
+  display: inline-block;
+  font-size: 10px;
+  margin-left: 4px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background-color: rgba(240, 96, 40, 0.1);
+  color: #f06028;
+}
+
+.prometheus-source {
+  border-left: 3px solid #f06028;
+  padding-left: 12px;
+}
+
+/* Data source filter styles */
+.filter-section:nth-child(5) .filter-tag {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.filter-section:nth-child(5) .filter-tag:nth-child(2)::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #3872f2;
+}
+
+.filter-section:nth-child(5) .filter-tag:nth-child(3)::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #f06028;
+}
+
+/* Timeline adjustments for multiple sources */
+.timeline-track {
+  position: relative;
+}
+
+.timeline-track::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background-color: rgba(126, 126, 143, 0.3);
+  z-index: 0;
+}

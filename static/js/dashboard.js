@@ -17,7 +17,7 @@
     // Set up event listeners
     setupEventListeners();
     
-    // Initial data fetch
+    // Fetch initial data
     fetchInitialData();
     
     // Start auto-refresh
@@ -31,6 +31,10 @@
     
     KuberaUtils.fetchNamespaces()
       .then(namespaces => renderNamespaceFilters(namespaces));
+    
+    // Fetch data sources
+    KuberaUtils.fetchDataSources()
+      .then(sources => renderDataSourceFilters(sources));
     
     refreshData();
   }
@@ -68,6 +72,7 @@
     elements.timeRangeDropdown = document.getElementById('timeRangeDropdown');
     elements.namespaceFilterTags = document.getElementById('namespaceFilterTags');
     elements.priorityFilterTags = document.querySelector('.filter-section:nth-child(4) .filter-tags');
+    elements.sourceFilterTags = document.querySelector('.filter-section:nth-child(5) .filter-tags');
     elements.refreshTimelineButton = document.getElementById('refreshTimelineButton');
     
     // All filter tags
@@ -87,8 +92,8 @@
     let filteredGroupEvents;
     let filteredIndividualEvents;
     
-    // Apply namespace and priority filters first
-    if (state.activeNamespace !== 'All' || state.activePriority !== 'All') {
+    // Apply namespace, priority, and source filters first
+    if (state.activeNamespace !== 'All' || state.activePriority !== 'All' || state.activeSource !== 'all') {
       // If other filters are active, start with that filtered set
       filteredGroupEvents = [...state.groupedEvents];
       filteredIndividualEvents = [...state.individualEvents];
@@ -120,7 +125,8 @@
     filteredIndividualEvents = filteredIndividualEvents.filter(event => 
       event.alertType.toLowerCase().includes(searchTerm) ||
       event.pod.toLowerCase().includes(searchTerm) ||
-      event.namespace.toLowerCase().includes(searchTerm)
+      event.namespace.toLowerCase().includes(searchTerm) ||
+      (event.source && event.source.toLowerCase().includes(searchTerm))
     );
     
     // Update the state
@@ -217,6 +223,23 @@
           
           // Update state
           state.activePriority = this.textContent;
+        }
+        // Handle source filter (new)
+        else if (filterTitle === 'Source') {
+          // First reset all source tags
+          filterSection.querySelectorAll('.filter-tag').forEach(t => {
+            t.classList.remove('active');
+            t.style.color = '#d8d9da';
+            t.style.backgroundColor = '#2a2a36';
+          });
+          
+          // Set the active tag
+          this.classList.add('active');
+          this.style.backgroundColor = '#3872f2';
+          this.style.color = 'white';
+          
+          // Update state using data-source-id if available, otherwise text
+          state.activeSource = this.dataset.sourceId || this.textContent.toLowerCase();
         } 
         else {
           // For other filters, just toggle the active class on this section
@@ -274,6 +297,54 @@
     if (elements.clearSearchBtn) {
       elements.clearSearchBtn.addEventListener('click', clearSearchFilter);
     }
+  }
+  
+  // Render Data Source Filters
+  function renderDataSourceFilters(sources) {
+    if (!elements.sourceFilterTags) return;
+    
+    // Clear existing tags
+    elements.sourceFilterTags.innerHTML = '';
+    
+    // Add source tags
+    sources.forEach(source => {
+      const tag = document.createElement('div');
+      tag.className = 'filter-tag' + (source.id === state.activeSource ? ' active' : '');
+      tag.textContent = source.name;
+      tag.dataset.sourceId = source.id;
+      
+      if (source.id === state.activeSource) {
+        tag.style.backgroundColor = '#3872f2';
+        tag.style.color = 'white';
+      }
+      
+      // Add tooltips if descriptions are available
+      if (source.description) {
+        tag.title = source.description;
+      }
+      
+      tag.addEventListener('click', function() {
+        // Update active state for all tags
+        elements.sourceFilterTags.querySelectorAll('.filter-tag').forEach(t => {
+          t.classList.remove('active');
+          t.style.backgroundColor = '#2a2a36';
+          t.style.color = '#d8d9da';
+        });
+        
+        // Activate this tag
+        this.classList.add('active');
+        this.style.backgroundColor = '#3872f2';
+        this.style.color = 'white';
+        
+        // Update state
+        state.activeSource = this.dataset.sourceId;
+        
+        // Apply filters
+        applyFilters();
+      });
+      
+      elements.sourceFilterTags.appendChild(tag);
+    });
   }
 
   // Render the namespace filters with "more +" feature
@@ -486,25 +557,33 @@
       const groupMap = {};
       
       filteredIndividualEvents.forEach(event => {
-        if (!groupMap[event.alertType]) {
+        // Create a unique key using alertType and source
+        const groupKey = `${event.alertType}_${event.source || 'kubernetes'}`;
+        
+        if (!groupMap[groupKey]) {
           // Find the original group to get its severity
-          const originalGroup = state.allGroupedEvents.find(g => g.name === event.alertType);
+          const originalGroup = state.allGroupedEvents.find(g => 
+            g.name === event.alertType && 
+            (g.source || 'kubernetes') === (event.source || 'kubernetes')
+          );
           
-          groupMap[event.alertType] = {
+          groupMap[groupKey] = {
             name: event.alertType,
             severity: originalGroup ? originalGroup.severity : 'low',
             pods: [],
-            count: 0
+            count: 0,
+            source: event.source || 'kubernetes'
           };
         }
         
-        groupMap[event.alertType].pods.push({
+        groupMap[groupKey].pods.push({
           name: event.pod,
           namespace: event.namespace,
-          timestamp: event.timestamp
+          timestamp: event.timestamp,
+          source: event.source || 'kubernetes'
         });
         
-        groupMap[event.alertType].count++;
+        groupMap[groupKey].count++;
       });
       
       filteredGroupEvents = Object.values(groupMap);
@@ -522,6 +601,19 @@
       // Filter individual events by priority/severity
       filteredIndividualEvents = filteredIndividualEvents.filter(event => 
         event.severity === priorityLower
+      );
+    }
+    
+    // Apply source filter
+    if (state.activeSource !== 'all') {
+      // Filter groups by source
+      filteredGroupEvents = filteredGroupEvents.filter(group => 
+        (group.source || 'kubernetes') === state.activeSource
+      );
+      
+      // Filter individual events by source
+      filteredIndividualEvents = filteredIndividualEvents.filter(event => 
+        (event.source || 'kubernetes') === state.activeSource
       );
     }
     
@@ -548,54 +640,6 @@
     
     // Update timeline with filtered data
     KuberaUtils.renderTimelineTracks(state.groupedEvents);
-  }
-
-  // Process cluster issues data
-  function processClusterIssues(issues) {
-    // Store the original grouped events
-    state.allGroupedEvents = issues;
-    
-    // Process all individual events
-    state.allIndividualEvents = [];
-    let totalEvents = 0;
-    
-    // Also collect unique namespaces to potentially update filter options
-    const namespaces = new Set();
-    namespaces.add('All'); // Always include "All"
-    
-    issues.forEach(issue => {
-      totalEvents += issue.count;
-      
-      if (issue.pods) {
-        issue.pods.forEach(pod => {
-          // Add namespace to our set of unique namespaces
-          if (pod.namespace) {
-            namespaces.add(pod.namespace);
-          }
-          
-          state.allIndividualEvents.push({
-            severity: issue.severity,
-            alertType: issue.name,
-            pod: pod.name,
-            namespace: pod.namespace || 'default',
-            timestamp: pod.timestamp
-          });
-        });
-      }
-    });
-    
-    // Sort by timestamp, newest first
-    state.allIndividualEvents.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    
-    // Update namespace filter tags if they're missing any namespaces
-    // This ensures all available namespaces show in the filter
-    updateNamespaceFilters(namespaces);
-    
-    // Set up priority filter
-    setupPriorityFilter();
-    
-    // Apply initial filters (which defaults to "All")
-    applyFilters();
   }
 
   // Function to update namespace filters with any missing namespaces
@@ -636,6 +680,60 @@
     });
   }
 
+  // Process cluster issues data
+  function processClusterIssues(issues) {
+    // Store the original grouped events
+    state.allGroupedEvents = issues;
+    
+    // Process all individual events
+    state.allIndividualEvents = [];
+    let totalEvents = 0;
+    
+    // Also collect unique namespaces to potentially update filter options
+    const namespaces = new Set();
+    namespaces.add('All'); // Always include "All"
+    
+    issues.forEach(issue => {
+      totalEvents += issue.count;
+      
+      if (issue.pods) {
+        issue.pods.forEach(pod => {
+          // Add namespace to our set of unique namespaces
+          if (pod.namespace) {
+            namespaces.add(pod.namespace);
+          }
+          
+          // Include source information in the individual events
+          state.allIndividualEvents.push({
+            severity: issue.severity,
+            alertType: issue.name,
+            pod: pod.name,
+            namespace: pod.namespace || 'default',
+            timestamp: pod.timestamp || pod.start,
+            source: pod.source || issue.source || 'kubernetes'
+          });
+        });
+      }
+    });
+    
+    // Sort by timestamp, newest first
+    state.allIndividualEvents.sort((a, b) => {
+      const dateA = a.timestamp ? new Date(a.timestamp) : new Date();
+      const dateB = b.timestamp ? new Date(b.timestamp) : new Date();
+      return dateB - dateA;
+    });
+    
+    // Update namespace filter tags if they're missing any namespaces
+    // This ensures all available namespaces show in the filter
+    updateNamespaceFilters(namespaces);
+    
+    // Set up priority filter
+    setupPriorityFilter();
+    
+    // Apply initial filters (which defaults to "All")
+    applyFilters();
+  }
+
   // Function to render grouped events
   function renderGroupedEvents() {
     if (!elements.tableBody) return;
@@ -662,20 +760,28 @@
       if (issue.pods && issue.pods.length > 0) {
         latestPod = issue.pods.reduce((acc, p) => {
           if (!acc) return p;
-          const accTime = new Date(acc.timestamp);
-          const pTime = new Date(p.timestamp);
+          const accTime = new Date(acc.timestamp || acc.start);
+          const pTime = new Date(p.timestamp || p.start);
           return pTime > accTime ? p : acc;
         }, null);
       }
-
+      
+      // Add source tag if from Prometheus
+      const sourceTag = issue.source === 'prometheus' 
+        ? `<span class="source-tag">Prometheus</span>` 
+        : '';
+      
+      // Set up the onclick with source info
+      const sourceParam = issue.source === 'prometheus' ? 'prometheus' : 'kubernetes';
+      
       // Build the row
       const row = document.createElement('tr');
-      row.setAttribute('onclick', `openAnalysisPanel('${issue.name}')`);
+      row.setAttribute('onclick', `openAnalysisPanel('${issue.name}', '${sourceParam}')`);
       row.innerHTML = `
         <td><span class="badge ${badgeClass}">${severityText}</span></td>
-        <td>${issue.name}</td>
+        <td>${issue.name} ${sourceTag}</td>
         <td>View ${issue.count} events</td>
-        <td>${latestPod ? KuberaUtils.formatTimestamp(latestPod.timestamp) : '-'}</td>
+        <td>${latestPod ? KuberaUtils.formatTimestamp(latestPod.timestamp || latestPod.start) : '-'}</td>
         <td>${latestPod ? 'Pod ' + latestPod.name : '-'}</td>
       `;
 
@@ -704,12 +810,20 @@
         badgeClass = 'badge-medium';
       }
       
+      // Add source tag if from Prometheus
+      const sourceTag = event.source === 'prometheus' 
+        ? `<span class="source-tag">Prometheus</span>` 
+        : '';
+      
+      // Set up the onclick with source info
+      const sourceParam = event.source === 'prometheus' ? 'prometheus' : 'kubernetes';
+      
       // Build the row
       const row = document.createElement('tr');
-      row.setAttribute('onclick', `openAnalysisPanel('${event.alertType}')`);
+      row.setAttribute('onclick', `openAnalysisPanel('${event.alertType}', '${sourceParam}')`);
       row.innerHTML = `
         <td><span class="badge ${badgeClass}">${severityText}</span></td>
-        <td>${event.alertType}</td>
+        <td>${event.alertType} ${sourceTag}</td>
         <td>${event.pod}</td>
         <td>${event.namespace}</td>
         <td>${KuberaUtils.formatTimestamp(event.timestamp)}</td>
@@ -724,22 +838,23 @@
 })();
 
 // These functions need to be in global scope as they're called from HTML onclick attributes
-function openAnalysisPanel(issueType) {
+function openAnalysisPanel(issueType, source = 'kubernetes') {
   const panel = document.getElementById('analysisPanel');
   const title = panel.querySelector('.analysis-title');
   const content = panel.querySelector('.analysis-content');
   
-  title.textContent = `Investigating alert: ${issueType}`;
+  const sourceLabel = source === 'prometheus' ? ' [Prometheus]' : '';
+  title.textContent = `Investigating alert: ${issueType}${sourceLabel}`;
   content.innerHTML = '<div style="text-align: center; padding: 20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Loading analysis...</p></div>';
   
   // Show the panel
   panel.classList.add('open');
   
   // Fetch analysis data for this issue type
-  fetch(`/api/analyze/${issueType}`)
+  fetch(`/api/analyze/${issueType}?source=${source}`)
     .then(response => response.json())
     .then(data => {
-      renderAnalysis(data);
+      renderAnalysis(data, source);
     })
     .catch(error => {
       content.innerHTML = `<div class="error-message">Error loading analysis: ${error.message}</div>`;
@@ -753,7 +868,7 @@ function closeAnalysisPanel() {
 }
 
 // Render the analysis data in the panel
-function renderAnalysis(data) {
+function renderAnalysis(data, source = 'kubernetes') {
   const content = document.querySelector('.analysis-content');
   
   if (!data || !data.analysis || data.analysis.length === 0) {
@@ -763,10 +878,18 @@ function renderAnalysis(data) {
   
   let html = '';
   
+  // Add source indicator if it's from Prometheus
+  const sourceClass = source === 'prometheus' ? 'prometheus-source' : '';
+  const sourceInfo = source === 'prometheus' ? 
+    `<div class="section-info" style="margin-bottom: 15px; color: #f06028;">
+      <i class="fas fa-chart-line"></i> This analysis is based on Prometheus metrics data.
+     </div>` : '';
+  
   data.analysis.forEach(result => {
     html += `
-      <div class="analysis-section">
+      <div class="analysis-section ${sourceClass}">
         <div class="section-title">Pod: ${result.pod_name}</div>
+        ${sourceInfo}
         
         <div class="analysis-subsection">
           <h4>Root Cause</h4>
@@ -785,14 +908,18 @@ function renderAnalysis(data) {
         <div class="analysis-subsection">
           <h4>Events</h4>
           <div class="logs-container">
-            ${result.pod_events.map(event => `<div class="log-line">${event}</div>`).join('')}
+            ${result.pod_events && result.pod_events.length > 0 
+              ? result.pod_events.map(event => `<div class="log-line">${event}</div>`).join('')
+              : '<div class="log-line">No events available</div>'}
           </div>
         </div>
         
         <div class="analysis-subsection">
           <h4>Recent Logs</h4>
           <div class="logs-container">
-            ${result.logs_excerpt.map(log => `<div class="log-line">${log}</div>`).join('')}
+            ${result.logs_excerpt && result.logs_excerpt.length > 0
+              ? result.logs_excerpt.map(log => `<div class="log-line">${log}</div>`).join('')
+              : '<div class="log-line">No logs available</div>'}
           </div>
         </div>
       </div>

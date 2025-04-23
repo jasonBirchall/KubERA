@@ -6,16 +6,20 @@ from sqlalchemy import text
 
 import subprocess
 from agent.tools.k8s_tool import K8sTool
+from agent.tools.prometheus_tool import PrometheusTool
 from agent.llm_agent import LlmAgent
-from db import init_db, record_failure, engine
+from db import init_db, record_failure, engine, migrate_db
     
 
 k8s_tool = K8sTool()
+prometheus_tool = PrometheusTool()  # Using default localhost:9090
 llm_agent = LlmAgent()
     
 app = Flask(__name__)
-init_db()
 app.logger.setLevel(logging.DEBUG)
+
+migrate_db()
+init_db()
 
 def determine_issue_type(pod_metadata):
     """
@@ -47,8 +51,9 @@ def determine_issue_type(pod_metadata):
 
 def determine_severity(issue_type):
     """Maps issue types to severity levels (high, medium, low)"""
-    high_severity = ["PodOOMKilled", "CrashLoopBackOff", "HighLatencyForCustomerCheckout"]
-    medium_severity = ["ImagePullError", "KubeDeploymentReplicasMismatch", "TargetDown", "KubePodCrashLooping"]
+    high_severity = ["PodOOMKilled", "CrashLoopBackOff", "HighLatencyForCustomerCheckout", "MemoryPressure"]
+    medium_severity = ["ImagePullError", "KubeDeploymentReplicasMismatch", "TargetDown", "KubePodCrashLooping", 
+                       "HighCPUUsage", "PodRestarting", "PodNotReady"]
     
     if issue_type in high_severity:
         return "high"
@@ -138,100 +143,226 @@ def switch_kube_context(context_name):
 
 @app.route('/api/timeline_data')
 def get_timeline_data():
-    hours      = request.args.get('hours', 6, type=int)
-    namespace  = request.args.get('namespace', 'default')
-    horizon    = datetime.now(timezone.utc) - timedelta(hours=hours)
+    hours = request.args.get('hours', 6, type=int)
+    namespace = request.args.get('namespace', 'default')
+    data_source = request.args.get('source', 'all')  # 'kubernetes', 'prometheus', or 'all'
+    horizon = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     issue_groups = {}
-    for pod in k8s_tool.list_broken_pods(namespace):
-        win = k8s_tool.failure_window(namespace, pod, horizon)
-        # win = (first_seen: datetime, last_seen: datetime | None)
-        first_seen, last_seen = k8s_tool.failure_window(namespace, pod, horizon)
-        issue     = k8s_tool.determine_issue_type(k8s_tool.gather_metadata(namespace, pod))
-        severity  = k8s_tool.determine_severity(issue)
 
-        grp = issue_groups.setdefault(issue, {
-            "name":     issue,
-            "severity": severity,
-            "pods":     [],
-            "count":    0
-        })
+    # Get Kubernetes data if requested
+    if data_source in ['all', 'kubernetes']:
+        for pod in k8s_tool.list_broken_pods(namespace):
+            win = k8s_tool.failure_window(namespace, pod, horizon)
+            # win = (first_seen: datetime, last_seen: datetime | None)
+            first_seen, last_seen = k8s_tool.failure_window(namespace, pod, horizon)
+            issue = k8s_tool.determine_issue_type(k8s_tool.gather_metadata(namespace, pod))
+            severity = k8s_tool.determine_severity(issue)
 
-        grp["pods"].append({
-            "name":      pod,
-            "namespace": namespace,
-            "start":     first_seen.isoformat(),
-            "end":       None if last_seen is None else last_seen.isoformat()  # None → still occurring
-        })
-        grp["count"] += 1
+            grp = issue_groups.setdefault(f"{issue}_k8s", {
+                "name": issue,
+                "severity": severity,
+                "pods": [],
+                "count": 0,
+                "source": "kubernetes"
+            })
 
-        record_failure(namespace, pod, issue, severity, first_seen, last_seen)
+            grp["pods"].append({
+                "name": pod,
+                "namespace": namespace,
+                "start": first_seen.isoformat(),
+                "end": None if last_seen is None else last_seen.isoformat(),  # None → still occurring
+                "source": "kubernetes"
+            })
+            grp["count"] += 1
+
+            record_failure(namespace, pod, issue, severity, first_seen, last_seen, source="kubernetes")
+
+    # Get Prometheus data if requested
+    if data_source in ['all', 'prometheus']:
+        try:
+            # Attempt to get real Prometheus data
+            prom_alerts = prometheus_tool.get_pod_alerts(hours, namespace)
+            app.logger.debug(f"[DEBUG] Prometheus alerts = {prom_alerts}")
+        except Exception as e:
+            app.logger.warning(f"[WARNING] Error fetching Prometheus alerts: {e}. Using synthetic data.")
+            # Fall back to synthetic data
+            prom_alerts = prometheus_tool.generate_synthetic_data()
+
+        # Process Prometheus alerts
+        for alert in prom_alerts:
+            alert_name = alert["name"]
+            severity = alert["severity"]
+            
+            grp = issue_groups.setdefault(f"{alert_name}_prom", {
+                "name": alert_name,
+                "severity": severity,
+                "pods": [],
+                "count": 0,
+                "source": "prometheus"
+            })
+            
+            for pod in alert.get("pods", []):
+                pod_name = pod.get("name")
+                pod_namespace = pod.get("namespace", namespace)
+                start_time = datetime.fromisoformat(pod.get("start").replace("Z", "+00:00"))
+                
+                end_iso = pod.get("end")
+                end_time = None if end_iso is None else datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+                
+                grp["pods"].append({
+                    "name": pod_name,
+                    "namespace": pod_namespace,
+                    "start": pod.get("start"),
+                    "end": pod.get("end"),
+                    "source": "prometheus"
+                })
+                grp["count"] += 1
+                
+                record_failure(pod_namespace, pod_name, alert_name, severity, 
+                              start_time, end_time, source="prometheus")
 
     return jsonify(list(issue_groups.values()))
 
 @app.route('/api/timeline_history')
 def timeline_history():
-    hours  = request.args.get('hours', 24, type=int)
+    hours = request.args.get('hours', 24, type=int)
+    source = request.args.get('source', 'all')  # 'kubernetes', 'prometheus', or 'all'
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    # Build the source filter condition
+    source_filter = ""
+    if source == 'kubernetes':
+        source_filter = "AND source = 'kubernetes'"
+    elif source == 'prometheus':
+        source_filter = "AND source = 'prometheus'"
 
     # ---- open a connection and run the query ----
     with engine.connect() as conn:
         rows = conn.execute(
-            text("""
+            text(f"""
                 SELECT namespace, pod_name, issue_type, severity,
-                       first_seen, last_seen
+                       first_seen, last_seen, source
                   FROM pod_alerts
-                 WHERE first_seen >= :cutoff
-                    OR last_seen IS NULL
+                 WHERE (first_seen >= :cutoff
+                    OR last_seen IS NULL)
+                    {source_filter}
             """),
             {"cutoff": cutoff.isoformat()}
         ).mappings().all()          # .mappings() → rows as dict‑like objects
 
-    # ---- build the response exactly as before ----
+    # ---- build the response exactly as before, but including source ----
     issue_groups = {}
     for r in rows:
-        grp = issue_groups.setdefault(r["issue_type"], {
-            "name":     r["issue_type"],
+        # Create a unique key using issue_type and source
+        group_key = f"{r['issue_type']}_{r['source']}"
+        
+        grp = issue_groups.setdefault(group_key, {
+            "name": r["issue_type"],
             "severity": r["severity"],
-            "pods":     [],
-            "count":    0
+            "pods": [],
+            "count": 0,
+            "source": r["source"]
         })
         grp["pods"].append({
-            "name":      r["pod_name"],
+            "name": r["pod_name"],
             "namespace": r["namespace"],
-            "start":     r["first_seen"],
-            "end":       r["last_seen"]
+            "start": r["first_seen"],
+            "end": r["last_seen"],
+            "source": r["source"]
         })
         grp["count"] += 1
 
     return jsonify(list(issue_groups.values()))
 
+@app.route('/api/prometheus_data')
+def get_prometheus_data():
+    """
+    Returns data from Prometheus.
+    This can be used to get specific metrics or generated synthetic data.
+    """
+    hours = request.args.get('hours', 6, type=int)
+    namespace = request.args.get('namespace', None)
+    synthetic = request.args.get('synthetic', 'false').lower() == 'true'
+    
+    try:
+        if synthetic:
+            # Generate synthetic data for demo/testing
+            data = prometheus_tool.generate_synthetic_data()
+        else:
+            # Get real data from Prometheus
+            data = prometheus_tool.get_pod_alerts(hours, namespace)
+        
+        return jsonify(data)
+    except Exception as e:
+        app.logger.error(f"Error getting Prometheus data: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/cluster_issues')
 def get_cluster_issues():
     namespace = "default"
-    broken_pods = k8s_tool.list_broken_pods(namespace=namespace)
+    data_source = request.args.get('source', 'all')  # 'kubernetes', 'prometheus', or 'all'
     issue_groups = {}
-    app.logger.debug(f"[DEBUG] Broken pods = {broken_pods}")
+    
+    # Get Kubernetes data if requested
+    if data_source in ['all', 'kubernetes']:
+        broken_pods = k8s_tool.list_broken_pods(namespace=namespace)
+        app.logger.debug(f"[DEBUG] Broken pods = {broken_pods}")
 
-    for pod_name in broken_pods:
-        metadata = k8s_tool.gather_metadata(namespace, pod_name)
-        issue_type = k8s_tool.determine_issue_type(metadata)
-        severity = k8s_tool.determine_severity(issue_type)
+        for pod_name in broken_pods:
+            metadata = k8s_tool.gather_metadata(namespace, pod_name)
+            issue_type = k8s_tool.determine_issue_type(metadata)
+            severity = k8s_tool.determine_severity(issue_type)
 
-        if issue_type not in issue_groups:
-            issue_groups[issue_type] = {
-                "name": issue_type,
-                "severity": severity,
-                "pods": [],
-                "count": 0
-            }
+            if issue_type not in issue_groups:
+                issue_groups[issue_type] = {
+                    "name": issue_type,
+                    "severity": severity,
+                    "pods": [],
+                    "count": 0,
+                    "source": "kubernetes"
+                }
 
-        issue_groups[issue_type]["pods"].append({
-            "name": pod_name,
-            "namespace": namespace,
-            "timestamp": datetime.now().isoformat()
-        })
-        issue_groups[issue_type]["count"] += 1
+            issue_groups[issue_type]["pods"].append({
+                "name": pod_name,
+                "namespace": namespace,
+                "timestamp": datetime.now().isoformat(),
+                "source": "kubernetes"
+            })
+            issue_groups[issue_type]["count"] += 1
+    
+    # Get Prometheus data if requested
+    if data_source in ['all', 'prometheus']:
+        try:
+            # Try to get real Prometheus data
+            prom_alerts = prometheus_tool.get_pod_alerts(hours=1, namespace=namespace)
+        except Exception as e:
+            app.logger.warning(f"[WARNING] Error fetching Prometheus alerts: {e}. Using synthetic data.")
+            # Fall back to synthetic data
+            prom_alerts = prometheus_tool.generate_synthetic_data()
+        
+        # Process Prometheus alerts
+        for alert in prom_alerts:
+            alert_name = alert["name"]
+            severity = alert["severity"]
+            
+            if f"{alert_name}_prom" not in issue_groups:
+                issue_groups[f"{alert_name}_prom"] = {
+                    "name": alert_name,
+                    "severity": severity,
+                    "pods": [],
+                    "count": 0,
+                    "source": "prometheus"
+                }
+            
+            for pod in alert.get("pods", []):
+                issue_groups[f"{alert_name}_prom"]["pods"].append({
+                    "name": pod.get("name"),
+                    "namespace": pod.get("namespace", namespace),
+                    "timestamp": datetime.now().isoformat(),
+                    "source": "prometheus"
+                })
+                issue_groups[f"{alert_name}_prom"]["count"] += 1
 
     app.logger.debug(f"[DEBUG] Issue groups = {issue_groups}")
     return jsonify(list(issue_groups.values()))
@@ -244,29 +375,53 @@ def analyze_issue(issue_type):
     """
     try:
         namespace = "default"  # or glean from request/query param
-        broken_pods = k8s_tool.list_broken_pods(namespace=namespace)
+        source = request.args.get('source', 'kubernetes')  # The data source to analyze
+        
+        if source == 'kubernetes':
+            broken_pods = k8s_tool.list_broken_pods(namespace=namespace)
+        else:
+            # For Prometheus alerts, we'd need to query the specific pods
+            # For demo/simplicity, use synthetic data
+            prom_data = prometheus_tool.generate_synthetic_data()
+            broken_pods = []
+            for alert in prom_data:
+                if alert["name"] == issue_type:
+                    broken_pods.extend([pod["name"] for pod in alert.get("pods", [])])
 
         analysis_results = []
         for pod_name in broken_pods:
             # 1) Gather metadata
-            metadata = k8s_tool.gather_metadata(namespace, pod_name)
-
+            if source == 'kubernetes':
+                metadata = k8s_tool.gather_metadata(namespace, pod_name)
+                found_issue = determine_issue_type(metadata)
+            else:
+                # For Prometheus, we'd have different metadata
+                metadata = {"source": "prometheus", "pod_name": pod_name, "issue": issue_type}
+                found_issue = issue_type
+            
             # 2) Determine if it actually matches the requested issue_type
-            found_issue = determine_issue_type(metadata)
-            if found_issue != issue_type:
+            # For Prometheus sources, remove the "_prom" suffix if present
+            if source == 'prometheus' and issue_type.endswith("_prom"):
+                compare_issue = issue_type[:-5]  # Remove "_prom" suffix
+            else:
+                compare_issue = issue_type
+                
+            if found_issue != compare_issue:
                 continue  # Skip pods that are failing for different reasons
 
-            # 3) Fetch logs for context
-            logs = k8s_tool.fetch_logs(namespace, pod_name, lines=100)  # or lines=500, up to you
-            metadata["logs"] = logs  # optionally store logs inside metadata before LLM call
+            # 3) Fetch logs for context (only for Kubernetes source)
+            if source == 'kubernetes':
+                logs = k8s_tool.fetch_logs(namespace, pod_name, lines=100)
+                metadata["logs"] = logs  # store logs inside metadata before LLM call
+            else:
+                # For Prometheus alerts, we might not have direct logs, but we can provide metrics context
+                logs = "Prometheus metrics indicate issues for this pod."
 
             # 4) Call LLM for a diagnosis
-            #    The LLM can parse the logs + events in `metadata`
             llm_response = llm_agent.diagnose_pod(metadata)
 
-            # For demonstration, we’ll do a quick naive parse
+            # For demonstration, we'll do a quick naive parse
             # of the LLM's text to separate root causes & recommended actions.
-            # You can refine to your liking:
             root_cause = []
             runbook = []
 
@@ -276,11 +431,11 @@ def analyze_issue(issue_type):
                 runbook_text = llm_response.split("Recommended Actions:")[1]
 
                 root_cause = [line.strip()
-                              for line in root_cause_text.strip().split("\n") if line.strip()]
+                             for line in root_cause_text.strip().split("\n") if line.strip()]
                 runbook = [line.strip()
-                           for line in runbook_text.strip().split("\n") if line.strip()]
+                          for line in runbook_text.strip().split("\n") if line.strip()]
             else:
-                # fallback if we can’t parse properly
+                # fallback if we can't parse properly
                 root_cause = [llm_response]
                 runbook = ["No structured runbook found."]
 
@@ -291,7 +446,8 @@ def analyze_issue(issue_type):
                 "root_cause": root_cause,
                 "recommended_actions": runbook,
                 "pod_events": metadata.get("events", []),
-                "logs_excerpt": logs.splitlines()[-10:],  # last 10 lines, for example
+                "logs_excerpt": logs.splitlines()[-10:] if isinstance(logs, str) else [],  # last 10 lines
+                "source": source,
                 "raw_llm_output": llm_response  # optional, might be large
             })
 
@@ -304,6 +460,19 @@ def analyze_issue(issue_type):
     except Exception as e:
         print(f"Error analyzing issue '{issue_type}': {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/sources')
+def get_data_sources():
+    """
+    Returns available data sources that can be used for filtering.
+    """
+    sources = [
+        {"id": "all", "name": "All Sources", "description": "Data from all available sources"},
+        {"id": "kubernetes", "name": "Kubernetes", "description": "Pod events from Kubernetes API"},
+        {"id": "prometheus", "name": "Prometheus", "description": "Metrics and alerts from Prometheus"}
+    ]
+    return jsonify(sources)
 
 if __name__ == '__main__':
     app.run(debug=True)
