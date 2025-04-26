@@ -93,6 +93,12 @@ reset-db:
 	uv run python reset_db.py
 	@echo "✅ Database reset complete"
 
+## Clean up the database by removing old entries and merging duplicates
+cleanup-db:
+	@echo "Cleaning up Kubera database..."
+	uv run python cleanup_db.py
+	@echo "✅ Database cleanup complete"
+
 install-argocd:
 	@echo "Installing ArgoCD in 'argocd' namespace..."
 	kubectl apply -f k8s/argocd.yaml
@@ -166,7 +172,7 @@ wait-for-argocd:
 	@echo "✅ ArgoCD components are ready"
 
 ## Destroy the entire environment and clean up all resources
-destroy-all: 
+destroy-all:
 	@echo "Starting clean-up of all resources..."
 	@echo "Removing failing pods..."
 	@kubectl delete -f k8s/broken-pod.yaml || true
