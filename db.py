@@ -459,3 +459,202 @@ def record_failure(namespace: str,
                                 issue, severity, first_dt, last_dt)
     elif source == "argocd":
         record_argocd_alert(pod_name, issue, severity, first_dt, last_dt)
+
+
+def get_active_alerts(hours=24, namespace=None, source=None):
+    """
+    Retrieve only active/ongoing alerts (where last_seen is NULL) from the all_alerts view
+    with optional filtering.
+
+    Args:
+        hours: Number of hours to look back
+        namespace: Filter by namespace (optional)
+        source: Filter by source (optional)
+
+    Returns:
+        List of dictionary-like objects with alert data
+    """
+    cutoff = datetime.now() - timedelta(hours=hours)
+    cutoff_iso = cutoff.isoformat() + "Z"
+
+    conditions = ["first_seen >= :cutoff AND last_seen IS NULL"]
+    params = {"cutoff": cutoff_iso}
+
+    if namespace:
+        conditions.append("namespace = :namespace")
+        params["namespace"] = namespace
+
+    if source:
+        conditions.append("source = :source")
+        params["source"] = source
+
+    where_clause = " AND ".join(conditions)
+
+    query = f"""
+        SELECT *
+        FROM all_alerts
+        WHERE {where_clause}
+        ORDER BY first_seen DESC
+    """
+
+    with engine.connect() as conn:
+        result = conn.execute(text(query), params).mappings().all()
+        return [dict(row) for row in result]
+
+
+def get_active_alerts_deduplicated(hours=24, namespace=None, source=None):
+    """
+    Retrieve only active/ongoing alerts (where last_seen is NULL) from the all_alerts view,
+    with deduplication based on namespace/pod name (keeping highest priority).
+
+    Args:
+        hours: Number of hours to look back
+        namespace: Filter by namespace (optional)
+        source: Filter by source (optional)
+
+    Returns:
+        List of dictionary-like objects with alert data, deduplicated by namespace/pod name
+    """
+    cutoff = datetime.now() - timedelta(hours=hours)
+    cutoff_iso = cutoff.isoformat() + "Z"
+
+    conditions = ["first_seen >= :cutoff AND last_seen IS NULL"]
+    params = {"cutoff": cutoff_iso}
+
+    if namespace:
+        conditions.append("namespace = :namespace")
+        params["namespace"] = namespace
+
+    if source:
+        conditions.append("source = :source")
+        params["source"] = source
+
+    where_clause = " AND ".join(conditions)
+
+    # This query uses a window function to get the highest severity alert for each namespace/pod combination
+    # We map severity to a numeric value (high=1, medium=2, low=3) for ordering
+    query = f"""
+        WITH ranked_alerts AS (
+            SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY namespace, name
+                    ORDER BY
+                        CASE
+                            WHEN severity = 'high' THEN 1
+                            WHEN severity = 'medium' THEN 2
+                            WHEN severity = 'low' THEN 3
+                            ELSE 4
+                        END
+                ) as priority_rank
+            FROM all_alerts
+            WHERE {where_clause}
+        )
+        SELECT id, namespace, name, issue_type, severity, first_seen, last_seen, source, event_hash
+        FROM ranked_alerts
+        WHERE priority_rank = 1
+        ORDER BY first_seen DESC
+    """
+
+    with engine.connect() as conn:
+        result = conn.execute(text(query), params).mappings().all()
+        return [dict(row) for row in result]
+
+
+def get_all_alerts_deduplicated(hours=24, namespace=None, source=None):
+    """
+    Retrieve alerts from the all_alerts view with optional filtering.
+    When duplicates of namespace/pod name exist, only returns the highest priority alert.
+
+    Args:
+        hours: Number of hours to look back
+        namespace: Filter by namespace (optional)
+        source: Filter by source (optional)
+
+    Returns:
+        List of dictionary-like objects with alert data, deduplicated by namespace/pod name
+    """
+    cutoff = datetime.now() - timedelta(hours=hours)
+    cutoff_iso = cutoff.isoformat() + "Z"
+
+    conditions = ["(first_seen >= :cutoff OR last_seen IS NULL)"]
+    params = {"cutoff": cutoff_iso}
+
+    if namespace:
+        conditions.append("namespace = :namespace")
+        params["namespace"] = namespace
+
+    if source:
+        conditions.append("source = :source")
+        params["source"] = source
+
+    where_clause = " AND ".join(conditions)
+
+    # This query uses a window function to get the highest severity alert for each namespace/pod combination
+    # We map severity to a numeric value (high=1, medium=2, low=3) for ordering
+    query = f"""
+        WITH ranked_alerts AS (
+            SELECT *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY namespace, name
+                    ORDER BY
+                        CASE
+                            WHEN severity = 'high' THEN 1
+                            WHEN severity = 'medium' THEN 2
+                            WHEN severity = 'low' THEN 3
+                            ELSE 4
+                        END
+                ) as priority_rank
+            FROM all_alerts
+            WHERE {where_clause}
+        )
+        SELECT id, namespace, name, issue_type, severity, first_seen, last_seen, source, event_hash
+        FROM ranked_alerts
+        WHERE priority_rank = 1
+        ORDER BY first_seen DESC
+    """
+
+    with engine.connect() as conn:
+        result = conn.execute(text(query), params).mappings().all()
+        return [dict(row) for row in result]
+
+
+def cleanup_stale_ongoing_alerts(max_minutes=10):
+    """
+    Remove alerts that are still marked as ongoing (last_seen is NULL)
+    but have not been updated for more than the specified number of minutes.
+
+    Args:
+        max_minutes: Maximum age in minutes to consider an ongoing alert as stale
+
+    Returns:
+        Dictionary with counts of records removed from each table
+    """
+    # Calculate the cutoff time
+    cutoff_date = (datetime.now() -
+                   timedelta(minutes=max_minutes)).isoformat() + "Z"
+
+    removed_counts = {}
+
+    with engine.begin() as conn:
+        # Clean up Kubernetes alerts
+        k8s_result = conn.execute(text("""
+            DELETE FROM k8s_alerts
+            WHERE first_seen < :cutoff_date AND last_seen IS NULL
+        """), {"cutoff_date": cutoff_date})
+        removed_counts["k8s_alerts"] = k8s_result.rowcount
+
+        # Clean up Prometheus alerts
+        prom_result = conn.execute(text("""
+            DELETE FROM prometheus_alerts
+            WHERE first_seen < :cutoff_date AND last_seen IS NULL
+        """), {"cutoff_date": cutoff_date})
+        removed_counts["prometheus_alerts"] = prom_result.rowcount
+
+        # Clean up ArgoCD alerts
+        argocd_result = conn.execute(text("""
+            DELETE FROM argocd_alerts
+            WHERE first_seen < :cutoff_date AND last_seen IS NULL
+        """), {"cutoff_date": cutoff_date})
+        removed_counts["argocd_alerts"] = argocd_result.rowcount
+
+    return removed_counts

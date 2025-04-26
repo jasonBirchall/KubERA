@@ -22,6 +22,9 @@
 
     // Start auto-refresh
     KuberaUtils.startAutoRefresh(refreshData);
+
+    // Set up the toggles
+    setupToggles();
   }
 
   // Fetch all initial data needed
@@ -42,9 +45,15 @@
   // Refresh dashboard data
   function refreshData() {
     // Determine which timeline endpoint to use based on time range
+    const params = `deduplicate=${state.enableDeduplication}&show_resolved=${state.showResolvedEvents}`;
     const timelinePromise = (state.selectedHours <= 6)
-      ? KuberaUtils.fetchTimelineData()
-      : KuberaUtils.fetchTimelineHistory();
+      ? KuberaUtils.fetchTimelineData(params)
+      : KuberaUtils.fetchTimelineHistory(params);
+
+    // Show loading overlay
+    if (elements.loadingOverlay) {
+      elements.loadingOverlay.style.display = 'flex';
+    }
 
     // Fetch timeline data
     timelinePromise.then(data => {
@@ -53,9 +62,14 @@
     });
 
     // Fetch cluster issues
-    KuberaUtils.fetchClusterIssues()
+    KuberaUtils.fetchClusterIssues(params)
       .then(issues => {
         processClusterIssues(issues);
+
+        // Hide loading overlay
+        if (elements.loadingOverlay) {
+          elements.loadingOverlay.style.display = 'none';
+        }
       });
   }
 
@@ -856,6 +870,35 @@
 
     // Apply initial filters (which defaults to "All")
     applyFilters();
+  }
+
+  // Set up the toggles for display options
+  function setupToggles() {
+    // Deduplication toggle
+    const dedupToggle = document.getElementById('dedupToggle');
+    if (dedupToggle) {
+      // Set initial state
+      dedupToggle.checked = state.enableDeduplication;
+
+      // Add event listener
+      dedupToggle.addEventListener('change', function () {
+        state.enableDeduplication = this.checked;
+        refreshData(); // Refresh data with new setting
+      });
+    }
+
+    // Show resolved events toggle
+    const showResolvedToggle = document.getElementById('showResolvedToggle');
+    if (showResolvedToggle) {
+      // Set initial state
+      showResolvedToggle.checked = state.showResolvedEvents;
+
+      // Add event listener
+      showResolvedToggle.addEventListener('change', function () {
+        state.showResolvedEvents = this.checked;
+        refreshData(); // Refresh data with new setting
+      });
+    }
   }
 
   // Initialize when DOM is fully loaded

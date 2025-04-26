@@ -183,6 +183,15 @@ class PrometheusTool:
                 if not values:
                     continue
 
+                # For Prometheus pod status metrics, we need to check if the value is actually 1
+                # A value of 0 means the pod is NOT in that state
+                if issue_type in ["PodFailed", "PodNotReady", "PodPending"]:
+                    # Check if the latest value is 1 (meaning the pod is actually in that state)
+                    latest_value = float(values[-1][1])
+                    if latest_value <= 0:
+                        # Skip this pod as it's not actually in that state
+                        continue
+
                 timestamps = [datetime.fromtimestamp(
                     float(v[0]), tz=timezone.utc) for v in values]
                 first_seen = min(timestamps)

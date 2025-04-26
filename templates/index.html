@@ -125,6 +125,24 @@
           <div class="filter-tag">Add filter</div>
         </div>
       </div>
+
+      <div class="filter-section">
+        <div class="filter-title">Display Options</div>
+        <div class="toggle-container">
+          <label class="toggle-label">
+            <input type="checkbox" id="showResolvedToggle">
+            <span class="toggle-text">Show Resolved Events</span>
+          </label>
+          <div class="toggle-hint">When unchecked, only shows ongoing issues</div>
+        </div>
+        <div class="toggle-container">
+          <label class="toggle-label">
+            <input type="checkbox" id="dedupToggle" checked>
+            <span class="toggle-text">Remove Duplicates</span>
+          </label>
+          <div class="toggle-hint">Keeps only the highest priority for each pod</div>
+        </div>
+      </div>
     </div>
 
     <!-- Main Content Area -->

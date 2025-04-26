@@ -1,7 +1,7 @@
 // Kubera Shared Utility Functions
 // Common functionality used by both dashboard.js and timeline.js
 
-const KuberaUtils = (function() {
+const KuberaUtils = (function () {
   // Shared state variables that will be accessible to both modules
   let state = {
     allGroupedEvents: [],
@@ -20,7 +20,7 @@ const KuberaUtils = (function() {
 
   // DOM elements cache
   let elements = {};
-  
+
   // Initialization flags
   let initialized = false;
   let dropdownsInitialized = false;
@@ -41,9 +41,11 @@ const KuberaUtils = (function() {
   }
 
   // Fetch timeline data from API
-  function fetchTimelineData() {
+  function fetchTimelineData(queryParams = '') {
+    // Add the query separator if queryParams is not empty
+    const queryPrefix = queryParams ? '?' : '';
     console.log('Fetching timeline data...');
-    return fetch(`/api/timeline_data?hours=${state.selectedHours}&source=${state.activeSource}`)
+    return fetch(`/api/timeline_data${queryPrefix}${queryParams}`)
       .then(response => response.json())
       .then(data => {
         console.log('Timeline data received:', data);
@@ -56,8 +58,10 @@ const KuberaUtils = (function() {
   }
 
   // Fetch timeline history
-  function fetchTimelineHistory() {
-    return fetch(`/api/timeline_history?hours=${state.selectedHours}&source=${state.activeSource}`)
+  function fetchTimelineHistory(queryParams = '') {
+    // Add the query separator if queryParams is not empty
+    const queryPrefix = queryParams ? '?' : '';
+    return fetch(`/api/timeline_history${queryPrefix}${queryParams}`)
       .then(r => r.json())
       .then(data => {
         return data;
@@ -83,8 +87,10 @@ const KuberaUtils = (function() {
   }
 
   // Fetch cluster issues
-  function fetchClusterIssues() {
-    return fetch(`/api/cluster_issues?source=${state.activeSource}`)
+  function fetchClusterIssues(queryParams = '') {
+    // Add the query separator if queryParams is not empty
+    const queryPrefix = queryParams ? '?' : '';
+    return fetch(`/api/cluster_issues${queryPrefix}${queryParams}`)
       .then(response => response.json())
       .then(issues => {
         return issues;
@@ -106,9 +112,9 @@ const KuberaUtils = (function() {
         console.error('Error fetching data sources:', error);
         // Fallback sources
         return [
-          {id: 'all', name: 'All Sources'},
-          {id: 'kubernetes', name: 'Kubernetes'},
-          {id: 'prometheus', name: 'Prometheus'}
+          { id: 'all', name: 'All Sources' },
+          { id: 'kubernetes', name: 'Kubernetes' },
+          { id: 'prometheus', name: 'Prometheus' }
         ];
       });
   }
@@ -149,7 +155,7 @@ const KuberaUtils = (function() {
   function renderTimelineTracks(issues) {
     const tracks = document.querySelector('.timeline-tracks');
     if (!tracks) return;
-    
+
     tracks.innerHTML = '';
 
     if (!issues || issues.length === 0) {
@@ -158,19 +164,19 @@ const KuberaUtils = (function() {
     }
 
     const windowStart = Date.now() - state.selectedHours * 60 * 60 * 1000;
-    const windowEnd   = Date.now();
+    const windowEnd = Date.now();
 
     issues.forEach(issue => {
       const track = document.createElement('div');
       track.className = 'timeline-track';
 
-       // Add source indicator to the title based on source
+      // Add source indicator to the title based on source
       let sourceIndicator = '';
       if (issue.source === 'prometheus') {
         sourceIndicator = ' [Prometheus]';
       } else if (issue.source === 'argocd') {
         sourceIndicator = ' [ArgoCD]';
-      }     
+      }
 
       const title = document.createElement('div');
       title.className = 'timeline-track-title';
@@ -179,19 +185,19 @@ const KuberaUtils = (function() {
 
       if (issue.pods?.length) {
         issue.pods.forEach(pod => {
-          const ev       = document.createElement('div');
-          const start    = new Date(pod.start).getTime();
-          const end      = pod.end ? new Date(pod.end).getTime()
-                                  : Date.now();          // still occurring
-          const leftPct  = percentAlong(windowStart, windowEnd, start);
+          const ev = document.createElement('div');
+          const start = new Date(pod.start).getTime();
+          const end = pod.end ? new Date(pod.end).getTime()
+            : Date.now();          // still occurring
+          const leftPct = percentAlong(windowStart, windowEnd, start);
           const widthPct = Math.max(
-                            percentAlong(windowStart, windowEnd, end) - leftPct,
-                            0.8                                      // min width so it's clickable
-                          );
+            percentAlong(windowStart, windowEnd, end) - leftPct,
+            0.8                                      // min width so it's clickable
+          );
 
           ev.className = `timeline-event ${issue.severity || 'low'}`
-                      + (pod.end ? '' : ' ongoing');
-          
+            + (pod.end ? '' : ' ongoing');
+
           // Add a special class for Prometheus events
           if (pod.source === 'prometheus' || issue.source === 'prometheus') {
             ev.classList.add('prometheus-event');
@@ -199,32 +205,32 @@ const KuberaUtils = (function() {
             ev.classList.add('argocd-event');
           }
 
-           let tooltipContent = [
+          let tooltipContent = [
             `Pod: ${pod.name}`,
             `Namespace: ${pod.namespace}`,
             `Source: ${pod.source || issue.source || 'kubernetes'}`,
             `Started: ${new Date(pod.start).toLocaleString()}`,
             pod.end ? `Ended: ${new Date(pod.end).toLocaleString()}`
-                    : 'Still occurring'
+              : 'Still occurring'
           ];
-          
+
           // Add ArgoCD-specific details if available
           if (pod.details && (pod.source === 'argocd' || issue.source === 'argocd')) {
             tooltipContent.push('');
             tooltipContent.push(`Health: ${pod.details.healthStatus || 'Unknown'}`);
             tooltipContent.push(`Sync: ${pod.details.syncStatus || 'Unknown'}`);
-          }         
+          }
 
-          ev.style.left  = `${leftPct}%`;
+          ev.style.left = `${leftPct}%`;
           ev.style.width = `${widthPct}%`;
           ev.title = tooltipContent.join('\n');
 
           // click handler that includes source info
-          ev.addEventListener('click', function() {
+          ev.addEventListener('click', function () {
             // Extract issue type from timeline
-              const sourceParam = (pod.source === 'prometheus' || issue.source === 'prometheus') 
+            const sourceParam = (pod.source === 'prometheus' || issue.source === 'prometheus')
               ? 'prometheus' : (pod.source === 'argocd' || issue.source === 'argocd')
-              ? 'argocd' : 'kubernetes';
+                ? 'argocd' : 'kubernetes';
             if (sourceParam === 'argocd') {
               openArgoCDAnalysisPanel(pod.name);
             } else {
@@ -244,7 +250,7 @@ const KuberaUtils = (function() {
   function updateTimelineRuler() {
     const ruler = document.querySelector('.timeline-ruler');
     if (!ruler) return;
-    
+
     ruler.innerHTML = '';
 
     const segments = 7;
@@ -261,7 +267,7 @@ const KuberaUtils = (function() {
     if (refreshInterval) {
       clearInterval(refreshInterval);
     }
-    
+
     refreshInterval = setInterval(() => {
       if (callback && typeof callback === 'function') {
         callback();
@@ -291,53 +297,53 @@ const KuberaUtils = (function() {
       }
     }
   }
-  
+
   // Initialize dropdowns (time range, cluster)
   function initializeDropdowns(refreshCallback) {
     if (dropdownsInitialized) return;
-    
+
     // Time range dropdown handling
     const timeRangeButton = document.getElementById('timeRangeButton');
     const timeRangeDropdown = document.getElementById('timeRangeDropdown');
-    
+
     if (timeRangeButton && timeRangeDropdown) {
       // Set initial text
       timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last ${state.selectedHours} hrs ▾`;
-      
+
       // Set active item
       const defaultItem = timeRangeDropdown.querySelector(`[data-hours="${state.selectedHours}"]`);
       if (defaultItem) {
         defaultItem.classList.add('active');
       }
-      
+
       // Toggle dropdown
       timeRangeButton.addEventListener('click', () => {
-        timeRangeDropdown.style.display = (timeRangeDropdown.style.display === 'none' || !timeRangeDropdown.style.display) 
-          ? 'block' 
+        timeRangeDropdown.style.display = (timeRangeDropdown.style.display === 'none' || !timeRangeDropdown.style.display)
+          ? 'block'
           : 'none';
       });
-      
+
       // Handle dropdown item selection
       timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(item => {
-        item.addEventListener('click', function() {
+        item.addEventListener('click', function () {
           // Remove active from all
           timeRangeDropdown.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('active'));
-          
+
           // Set new active item
           this.classList.add('active');
-          
+
           // Update selected hours and UI
           state.selectedHours = parseInt(this.getAttribute('data-hours'), 10);
           timeRangeButton.innerHTML = `<i class="fas fa-clock btn-icon"></i> Last ${state.selectedHours} hrs ▾`;
           timeRangeDropdown.style.display = 'none';
-          
+
           // Call refresh callback if provided
           if (refreshCallback && typeof refreshCallback === 'function') {
             refreshCallback();
           }
         });
       });
-      
+
       // Hide dropdown if clicked elsewhere
       document.addEventListener('click', (event) => {
         if (!timeRangeButton.contains(event.target) && !timeRangeDropdown.contains(event.target)) {
@@ -345,14 +351,14 @@ const KuberaUtils = (function() {
         }
       });
     }
-    
+
     // Initialize data source filters
     initializeDataSources(refreshCallback);
-    
+
     // Mark as initialized
     dropdownsInitialized = true;
   }
-  
+
   // Initialize data source filters
   function initializeDataSources(refreshCallback) {
     // Fetch available data sources
@@ -360,47 +366,47 @@ const KuberaUtils = (function() {
       // Find the source filter section
       const sourceFilterSection = document.querySelector('.filter-section:nth-child(5)');
       if (!sourceFilterSection) return;
-      
+
       const filterTagsContainer = sourceFilterSection.querySelector('.filter-tags');
       if (!filterTagsContainer) return;
-      
+
       // Clear existing tags
       filterTagsContainer.innerHTML = '';
-      
+
       // Add source tags
       sources.forEach(source => {
         const tag = document.createElement('div');
         tag.className = 'filter-tag' + (source.id === state.activeSource ? ' active' : '');
         tag.textContent = source.name;
         tag.dataset.sourceId = source.id;
-        
+
         if (source.id === state.activeSource) {
           tag.style.backgroundColor = '#3872f2';
           tag.style.color = 'white';
         }
-        
-        tag.addEventListener('click', function() {
+
+        tag.addEventListener('click', function () {
           // Update active state for all tags
           filterTagsContainer.querySelectorAll('.filter-tag').forEach(t => {
             t.classList.remove('active');
             t.style.backgroundColor = '';
             t.style.color = '';
           });
-          
+
           // Activate this tag
           this.classList.add('active');
           this.style.backgroundColor = '#3872f2';
           this.style.color = 'white';
-          
+
           // Update state
           state.activeSource = this.dataset.sourceId;
-          
+
           // Refresh data if callback provided
           if (refreshCallback && typeof refreshCallback === 'function') {
             refreshCallback();
           }
         });
-        
+
         filterTagsContainer.appendChild(tag);
       });
     });
@@ -428,20 +434,20 @@ const KuberaUtils = (function() {
   // Initialize utility module
   function initialize(refreshCallback) {
     if (initialized) return;
-    
+
     // Initialize dropdowns
     initializeDropdowns(refreshCallback);
-    
+
     // Add CSS for Prometheus events
     addPrometheusStyles();
-    
+
     // Add CSS for ArgoCD events
     addArgoCDStyles();
 
     // Mark as initialized
     initialized = true;
   }
-  
+
   function fetchArgoCDData() {
     return fetch(`/api/argocd_data?hours=${state.selectedHours}`)
       .then(response => response.json())
@@ -512,7 +518,7 @@ function openAnalysisPanel(issueType, source = 'kubernetes') {
   const panel = document.getElementById('analysisPanel');
   const title = panel.querySelector('.analysis-title');
   const content = panel.querySelector('.analysis-content');
-  
+
   // Handle different sources with appropriate labels
   let sourceLabel = '';
   if (source === 'prometheus') {
@@ -522,13 +528,13 @@ function openAnalysisPanel(issueType, source = 'kubernetes') {
   } else {
     sourceLabel = ''; // Kubernetes is the default, no need for a label
   }
-  
+
   title.textContent = `Investigating alert: ${issueType}${sourceLabel}`;
   content.innerHTML = '<div style="text-align: center; padding: 20px;"><i class="fas fa-spinner fa-spin fa-2x"></i><p>Loading analysis...</p></div>';
-  
+
   // Show the panel
   panel.classList.add('open');
-  
+
   // For ArgoCD events, direct to the ArgoCD-specific endpoint
   if (source === 'argocd') {
     fetch(`/api/analyze/argocd/${issueType}`)
@@ -541,7 +547,7 @@ function openAnalysisPanel(issueType, source = 'kubernetes') {
       });
     return;
   }
-  
+
   // For Kubernetes and Prometheus, use the regular endpoint
   fetch(`/api/analyze/${issueType}?source=${source}`)
     .then(response => response.json())
@@ -556,18 +562,18 @@ function openAnalysisPanel(issueType, source = 'kubernetes') {
 // Render the analysis data in the panel
 function renderAnalysis(data, source = 'kubernetes') {
   const content = document.querySelector('.analysis-content');
-  
+
   if (!data || !data.analysis || data.analysis.length === 0) {
     content.innerHTML = `<div class="error-message">No analysis data available</div>`;
     return;
   }
-  
+
   let html = '';
-  
+
   // Add source indicator based on the source
   let sourceClass = '';
   let sourceInfo = '';
-  
+
   if (source === 'prometheus') {
     sourceClass = 'prometheus-source';
     sourceInfo = `<div class="section-info" style="margin-bottom: 15px; color: #f06028;">
@@ -579,48 +585,48 @@ function renderAnalysis(data, source = 'kubernetes') {
       <i class="fas fa-code-branch"></i> This analysis is based on ArgoCD application data.
      </div>`;
   }
-  
+
   data.analysis.forEach(result => {
     html += `
       <div class="analysis-section ${sourceClass}">
         <div class="section-title">Pod: ${result.pod_name}</div>
         ${sourceInfo}
-        
+
         <div class="analysis-subsection">
           <h4>Root Cause</h4>
           <ul class="root-cause-list">
             ${result.root_cause.map(cause => `<li>${cause}</li>`).join('')}
           </ul>
         </div>
-        
+
         <div class="analysis-subsection">
           <h4>Recommended Actions</h4>
           <ul class="root-cause-list">
             ${result.recommended_actions.map(action => `<li>${action}</li>`).join('')}
           </ul>
         </div>
-        
+
         <div class="analysis-subsection">
           <h4>Events</h4>
           <div class="logs-container">
-            ${result.pod_events && result.pod_events.length > 0 
-              ? result.pod_events.map(event => `<div class="log-line">${event}</div>`).join('')
-              : '<div class="log-line">No events available</div>'}
+            ${result.pod_events && result.pod_events.length > 0
+        ? result.pod_events.map(event => `<div class="log-line">${event}</div>`).join('')
+        : '<div class="log-line">No events available</div>'}
           </div>
         </div>
-        
+
         <div class="analysis-subsection">
           <h4>Recent Logs</h4>
           <div class="logs-container">
             ${result.logs_excerpt && result.logs_excerpt.length > 0
-              ? result.logs_excerpt.map(log => `<div class="log-line">${log}</div>`).join('')
-              : '<div class="log-line">No logs available</div>'}
+        ? result.logs_excerpt.map(log => `<div class="log-line">${log}</div>`).join('')
+        : '<div class="log-line">No logs available</div>'}
           </div>
         </div>
       </div>
     `;
   });
-  
+
   content.innerHTML = html;
 }
 

@@ -11,8 +11,10 @@ from agent.llm_agent import LlmAgent
 from agent.tools.argocd_tool import ArgoCDTool
 from agent.tools.k8s_tool import K8sTool
 from agent.tools.prometheus_tool import PrometheusTool
-from db import (engine, get_all_alerts, init_db, migrate_db,
-                record_argocd_alert, record_k8s_failure,
+from db import (cleanup_old_alerts, cleanup_stale_ongoing_alerts, engine,
+                get_active_alerts, get_active_alerts_deduplicated,
+                get_all_alerts, get_all_alerts_deduplicated, init_db,
+                migrate_db, record_argocd_alert, record_k8s_failure,
                 record_prometheus_alert)
 
 # Set up logging
@@ -373,16 +375,23 @@ def get_timeline_data():
     namespace = request.args.get('namespace', None)
     # 'kubernetes', 'prometheus', or 'all'
     data_source = request.args.get('source', 'all')
+    # Check if we should deduplicate by namespace/pod
+    deduplicate = request.args.get('deduplicate', 'false').lower() == 'true'
 
     logger.debug(
         f"timeline_data called with hours={hours}, namespace={namespace}, source={data_source}")
 
-    # Use the database instead of querying K8s/Prometheus/ArgoCD directly
-    # This will ensure consistency with timeline_history and help with deduplication
-    rows = get_all_alerts(hours=hours, namespace=namespace, source=data_source)
-    logger.debug(f"get_all_alerts returned {len(rows)} rows")
+    # Get only active (ongoing) alerts
+    if deduplicate:
+        rows = get_active_alerts_deduplicated(
+            hours=hours, namespace=namespace, source=data_source)
+    else:
+        rows = get_active_alerts(
+            hours=hours, namespace=namespace, source=data_source)
 
-    # Build the response using the results from get_all_alerts
+    logger.debug(f"get_active_alerts returned {len(rows)} rows")
+
+    # Build the response using the results from active alerts
     issue_groups = {}
     for r in rows:
         # Create a unique key using issue_type and source
@@ -415,11 +424,31 @@ def timeline_history():
     # 'kubernetes', 'prometheus', or 'all'
     source = request.args.get('source', 'all')
     namespace = request.args.get('namespace', None)
+    # Check if we should deduplicate by namespace/pod
+    deduplicate = request.args.get('deduplicate', 'false').lower() == 'true'
+    # Check if we should show only active alerts or include resolved ones
+    show_resolved = request.args.get(
+        'show_resolved', 'false').lower() == 'true'
 
-    # Use the new get_all_alerts function instead of direct SQL queries
-    rows = get_all_alerts(hours=hours, namespace=namespace, source=source)
+    # Use appropriate function based on parameters
+    if show_resolved:
+        # Include resolved alerts
+        if deduplicate:
+            rows = get_all_alerts_deduplicated(
+                hours=hours, namespace=namespace, source=source)
+        else:
+            rows = get_all_alerts(
+                hours=hours, namespace=namespace, source=source)
+    else:
+        # Only show active alerts
+        if deduplicate:
+            rows = get_active_alerts_deduplicated(
+                hours=hours, namespace=namespace, source=source)
+        else:
+            rows = get_active_alerts(
+                hours=hours, namespace=namespace, source=source)
 
-    # Build the response using the results from get_all_alerts
+    # Build the response using the results
     issue_groups = {}
     for r in rows:
         # Create a unique key using issue_type and source
@@ -997,4 +1026,5 @@ def db_diagnostics():
 
 
 if __name__ == '__main__':
+    app.run(debug=True)
     app.run(debug=True)
