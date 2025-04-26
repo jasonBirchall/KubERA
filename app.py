@@ -1,5 +1,7 @@
 import logging
 import subprocess
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from flask import Flask, jsonify, render_template, request
@@ -27,6 +29,213 @@ app.logger.setLevel(logging.DEBUG)
 
 migrate_db()
 init_db()
+
+
+def collect_and_store_data():
+    """
+    Collect data from K8s, Prometheus, and ArgoCD and store it in the database.
+    This runs in a background thread to ensure the database is populated.
+    """
+    logger.info("Collecting data from K8s, Prometheus, and ArgoCD...")
+    try:
+        # Set time horizon for data collection (last 6 hours)
+        hours = 6
+        # Make horizon timezone-aware with UTC timezone
+        horizon = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+        # Collect Kubernetes data
+        k8s_count = 0
+        namespaces = k8s_tool.get_namespaces()
+        logger.debug(f"Found {len(namespaces)} namespaces: {namespaces}")
+
+        for ns in namespaces:
+            broken_pods = k8s_tool.list_broken_pods(ns)
+            logger.debug(
+                f"Found {len(broken_pods)} broken pods in namespace {ns}: {broken_pods}")
+
+            for pod in broken_pods:
+                # Get the failure window for this pod
+                first_seen, last_seen = k8s_tool.failure_window(
+                    ns, pod, horizon)
+                issue = k8s_tool.determine_issue_type(
+                    k8s_tool.gather_metadata(ns, pod))
+                severity = k8s_tool.determine_severity(issue)
+
+                logger.debug(
+                    f"Recording K8s failure: {ns}/{pod}, issue={issue}, severity={severity}, first_seen={first_seen}, last_seen={last_seen}")
+                # Record in the database
+                record_k8s_failure(ns, pod, issue, severity,
+                                   first_seen, last_seen)
+                k8s_count += 1
+
+        logger.info(f"Recorded {k8s_count} Kubernetes alerts in the database")
+
+        # Collect ArgoCD data
+        argocd_count = 0
+        argocd_alerts = argocd_tool.get_application_alerts(hours)
+        logger.debug(
+            f"Found {len(argocd_alerts)} ArgoCD alerts: {argocd_alerts}")
+
+        for alert in argocd_alerts:
+            issue_type = alert.get("name")
+            severity = alert.get("severity", "medium")
+
+            for app in alert.get("pods", []):
+                app_name = app.get("name")
+                start_time = datetime.fromisoformat(
+                    app.get("start").replace("Z", "+00:00"))
+
+                end_iso = app.get("end")
+                end_time = None if end_iso is None else datetime.fromisoformat(
+                    end_iso.replace("Z", "+00:00"))
+
+                # Get sync and health status if available
+                sync_status = app.get("sync_status")
+                health_status = app.get("health_status")
+
+                logger.debug(
+                    f"Recording ArgoCD alert: app={app_name}, issue={issue_type}, severity={severity}, first_seen={start_time}, last_seen={end_time}")
+                # Record in the database
+                if issue_type:  # Ensure issue_type is not None
+                    record_argocd_alert(app_name, issue_type, severity,
+                                        start_time, end_time,
+                                        sync_status, health_status)
+                    argocd_count += 1
+
+        logger.info(f"Recorded {argocd_count} ArgoCD alerts in the database")
+
+        # Collect Prometheus data
+        prom_count = 0
+        prom_alerts = prometheus_tool.get_pod_alerts(hours)
+        logger.debug(
+            f"Found {len(prom_alerts)} Prometheus alerts: {prom_alerts}")
+
+        for alert in prom_alerts:
+            alert_name = alert["name"]
+            severity = alert["severity"]
+
+            for pod in alert.get("pods", []):
+                pod_name = pod.get("name")
+                pod_namespace = pod.get("namespace", "default")
+                start_time = datetime.fromisoformat(
+                    pod.get("start").replace("Z", "+00:00"))
+
+                end_iso = pod.get("end")
+                end_time = None if end_iso is None else datetime.fromisoformat(
+                    end_iso.replace("Z", "+00:00"))
+
+                # Get the metric value if available
+                metric_value = pod.get("value")
+
+                logger.debug(
+                    f"Recording Prometheus alert: {pod_namespace}/{pod_name}, alert={alert_name}, severity={severity}, first_seen={start_time}, last_seen={end_time}")
+                # Record in the database
+                record_prometheus_alert(pod_namespace, pod_name, alert_name, severity,
+                                        start_time, end_time, metric_value)
+                prom_count += 1
+
+        logger.info(f"Recorded {prom_count} Prometheus alerts in the database")
+
+        # Check total count in the database after collection
+        with engine.connect() as conn:
+            total_count = conn.execute(
+                text("SELECT COUNT(*) FROM all_alerts")).fetchone()[0]
+            logger.info(
+                f"Total alerts in database after collection: {total_count}")
+
+        logger.info("Finished collecting and storing data")
+    except Exception as e:
+        logger.error(f"Error collecting data: {str(e)}", exc_info=True)
+
+
+def data_collection_thread_function():
+    """Background thread that collects and stores data every minute."""
+    while True:
+        try:
+            collect_and_store_data()
+            # Sleep for 1 minute
+            time.sleep(60)
+        except Exception as e:
+            logger.error(f"Error in data collection thread: {str(e)}")
+            # Sleep for 30 seconds before trying again
+            time.sleep(30)
+
+
+def cleanup_duplicate_pod_events():
+    """
+    Identify duplicate pod events and remove the oldest ones.
+    Only one event per pod name and source should be kept (the most recent one).
+    """
+    logger.info("Running duplicate pod event cleanup...")
+    try:
+        with engine.connect() as conn:
+            # Clean up Kubernetes alerts
+            k8s_query = """
+            DELETE FROM k8s_alerts
+            WHERE id NOT IN (
+                SELECT MAX(id)
+                FROM k8s_alerts
+                GROUP BY namespace, pod_name, issue_type
+            )
+            """
+            k8s_result = conn.execute(text(k8s_query))
+
+            # Clean up Prometheus alerts
+            prom_query = """
+            DELETE FROM prometheus_alerts
+            WHERE id NOT IN (
+                SELECT MAX(id)
+                FROM prometheus_alerts
+                GROUP BY namespace, pod_name, alert_name
+            )
+            """
+            prom_result = conn.execute(text(prom_query))
+
+            # Clean up ArgoCD alerts
+            argocd_query = """
+            DELETE FROM argocd_alerts
+            WHERE id NOT IN (
+                SELECT MAX(id)
+                FROM argocd_alerts
+                GROUP BY application_name, issue_type
+            )
+            """
+            argocd_result = conn.execute(text(argocd_query))
+
+            conn.commit()
+
+            total_cleaned = k8s_result.rowcount + \
+                prom_result.rowcount + argocd_result.rowcount
+            logger.info(
+                f"Cleaned up {total_cleaned} duplicate events (K8s: {k8s_result.rowcount}, Prometheus: {prom_result.rowcount}, ArgoCD: {argocd_result.rowcount})")
+    except Exception as e:
+        logger.error(f"Error cleaning up duplicate pod events: {str(e)}")
+
+
+def cleanup_thread_function():
+    """Background thread that runs the cleanup function every two minutes."""
+    while True:
+        try:
+            cleanup_duplicate_pod_events()
+            # Sleep for 2 minutes
+            time.sleep(120)
+        except Exception as e:
+            logger.error(f"Error in cleanup thread: {str(e)}")
+            # Sleep for a minute before trying again
+            time.sleep(60)
+
+
+# Start the data collection thread when the app starts
+data_collection_thread = threading.Thread(
+    target=data_collection_thread_function, daemon=True)
+data_collection_thread.start()
+
+# Start the cleanup thread when the app starts
+cleanup_thread = threading.Thread(target=cleanup_thread_function, daemon=True)
+cleanup_thread.start()
+
+# Run initial data collection to populate the database
+collect_and_store_data()
 
 
 def determine_issue_type(pod_metadata):
@@ -164,138 +373,40 @@ def get_timeline_data():
     namespace = request.args.get('namespace', None)
     # 'kubernetes', 'prometheus', or 'all'
     data_source = request.args.get('source', 'all')
-    horizon = datetime.now(timezone.utc) - timedelta(hours=hours)
 
+    logger.debug(
+        f"timeline_data called with hours={hours}, namespace={namespace}, source={data_source}")
+
+    # Use the database instead of querying K8s/Prometheus/ArgoCD directly
+    # This will ensure consistency with timeline_history and help with deduplication
+    rows = get_all_alerts(hours=hours, namespace=namespace, source=data_source)
+    logger.debug(f"get_all_alerts returned {len(rows)} rows")
+
+    # Build the response using the results from get_all_alerts
     issue_groups = {}
+    for r in rows:
+        # Create a unique key using issue_type and source
+        group_key = f"{r['issue_type']}_{r['source']}"
 
-    # Get Kubernetes data if requested
-    if data_source in ['all', 'kubernetes']:
-        # Get list of all namespaces if none specified
-        namespaces_to_check = [
-            namespace] if namespace else k8s_tool.get_namespaces()
+        grp = issue_groups.setdefault(group_key, {
+            "name": r["issue_type"],
+            "severity": r["severity"],
+            "pods": [],
+            "count": 0,
+            "source": r["source"]
+        })
+        grp["pods"].append({
+            "name": r["name"],
+            "namespace": r["namespace"],
+            "start": r["first_seen"],
+            "end": r["last_seen"],
+            "source": r["source"]
+        })
+        grp["count"] += 1
 
-        for ns in namespaces_to_check:
-            for pod in k8s_tool.list_broken_pods(ns):
-                # Get the failure window for this pod
-                first_seen, last_seen = k8s_tool.failure_window(
-                    ns, pod, horizon)
-                issue = k8s_tool.determine_issue_type(
-                    k8s_tool.gather_metadata(ns, pod))
-                severity = k8s_tool.determine_severity(issue)
-
-                grp = issue_groups.setdefault(f"{issue}_k8s", {
-                    "name": issue,
-                    "severity": severity,
-                    "pods": [],
-                    "count": 0,
-                    "source": "kubernetes"
-                })
-
-                grp["pods"].append({
-                    "name": pod,
-                    "namespace": ns,
-                    "start": first_seen.isoformat(),
-                    "end": None if last_seen is None else last_seen.isoformat(),  # None → still occurring
-                    "source": "kubernetes"
-                })
-                grp["count"] += 1
-
-                record_k8s_failure(ns, pod, issue, severity,
-                                   first_seen, last_seen)
-
-    if data_source in ['all', 'argocd']:
-        # Get ArgoCD alerts
-        argocd_alerts = argocd_tool.get_application_alerts(hours)
-        logger.debug(f"ArgoCD alerts = {argocd_alerts}")
-
-        # Process ArgoCD alerts
-        for alert in argocd_alerts:
-            issue_type = alert.get("name")
-            severity = alert.get("severity", "medium")
-
-            # Add the alert to the response
-            grp = issue_groups.setdefault(f"{issue_type}_argocd", {
-                "name": issue_type,
-                "severity": severity,
-                "pods": [],  # will contain applications instead of pods
-                "count": 0,
-                "source": "argocd"
-            })
-
-            # Process each application in the alert
-            for app in alert.get("pods", []):
-                app_name = app.get("name")
-                start_time = datetime.fromisoformat(
-                    app.get("start").replace("Z", "+00:00"))
-
-                end_iso = app.get("end")
-                end_time = None if end_iso is None else datetime.fromisoformat(
-                    end_iso.replace("Z", "+00:00"))
-
-                # Get sync and health status if available
-                sync_status = app.get("sync_status")
-                health_status = app.get("health_status")
-
-                grp["pods"].append({
-                    "name": app_name,
-                    "namespace": None,  # ArgoCD doesn't use namespace this way
-                    "start": app.get("start"),
-                    "end": app.get("end"),
-                    "source": "argocd"
-                })
-                grp["count"] += 1
-
-                # Record in the database
-                if issue_type:  # Ensure issue_type is not None
-                    record_argocd_alert(app_name, issue_type, severity,
-                                        start_time, end_time,
-                                        sync_status, health_status)
-
-    # Get Prometheus data if requested
-    if data_source in ['all', 'prometheus']:
-        # Attempt to get real Prometheus data
-        prom_alerts = prometheus_tool.get_pod_alerts(hours, namespace)
-        logger.debug(f"Prometheus alerts = {prom_alerts}")
-
-        # Process Prometheus alerts
-        for alert in prom_alerts:
-            alert_name = alert["name"]
-            severity = alert["severity"]
-
-            grp = issue_groups.setdefault(f"{alert_name}_prom", {
-                "name": alert_name,
-                "severity": severity,
-                "pods": [],
-                "count": 0,
-                "source": "prometheus"
-            })
-
-            for pod in alert.get("pods", []):
-                pod_name = pod.get("name")
-                pod_namespace = pod.get("namespace", namespace)
-                start_time = datetime.fromisoformat(
-                    pod.get("start").replace("Z", "+00:00"))
-
-                end_iso = pod.get("end")
-                end_time = None if end_iso is None else datetime.fromisoformat(
-                    end_iso.replace("Z", "+00:00"))
-
-                grp["pods"].append({
-                    "name": pod_name,
-                    "namespace": pod_namespace,
-                    "start": pod.get("start"),
-                    "end": pod.get("end"),
-                    "source": "prometheus"
-                })
-                grp["count"] += 1
-
-                # Get the metric value if available
-                metric_value = pod.get("value")
-
-                record_prometheus_alert(pod_namespace, pod_name, alert_name, severity,
-                                        start_time, end_time, metric_value)
-
-    return jsonify(list(issue_groups.values()))
+    result = list(issue_groups.values())
+    logger.debug(f"Returning {len(result)} timeline groups: {result}")
+    return jsonify(result)
 
 
 @app.route('/api/timeline_history')
@@ -534,13 +645,13 @@ def analyze_issue(issue_type):
             logger.info(
                 f"Fetching metadata from database for issue type: {compare_issue}, source: {source}")
 
-            # Query the SQLite database for events with this issue type
+            # Query the SQLite database using the all_alerts view
             with engine.connect() as conn:
                 # Build query based on source and issue type
                 query = """
-                    SELECT namespace, pod_name, issue_type, severity,
+                    SELECT namespace, name as pod_name, issue_type, severity,
                            first_seen, last_seen, source
-                    FROM pod_alerts
+                    FROM all_alerts
                     WHERE issue_type = :issue_type
                 """
 
@@ -812,6 +923,77 @@ def generate_alert_description():
             "description": f"{alert_type}: This alert may indicate a problem with your Kubernetes resources or applications. Check the pod events and logs for more details.",
             "source": "fallback"
         }), 200  # Return 200 instead of 500 to avoid UI errors
+
+
+@app.route('/api/db_diagnostics')
+def db_diagnostics():
+    """
+    Diagnostic endpoint to check what's in the database.
+    Returns counts and samples from all the database tables.
+    """
+    try:
+        diagnostics = {
+            "k8s_alerts": {
+                "count": 0,
+                "samples": []
+            },
+            "prometheus_alerts": {
+                "count": 0,
+                "samples": []
+            },
+            "argocd_alerts": {
+                "count": 0,
+                "samples": []
+            },
+            "all_alerts_view": {
+                "count": 0,
+                "samples": []
+            },
+            "database_info": {
+                "tables": [],
+                "views": []
+            }
+        }
+
+        with engine.connect() as conn:
+            # Get counts and samples from each table
+            for table in ["k8s_alerts", "prometheus_alerts", "argocd_alerts"]:
+                count_query = f"SELECT COUNT(*) FROM {table}"
+                count_result = conn.execute(text(count_query)).fetchone()
+                diagnostics[table]["count"] = count_result[0] if count_result else 0
+
+                # Get a few sample rows if there are any
+                if diagnostics[table]["count"] > 0:
+                    sample_query = f"SELECT * FROM {table} LIMIT 5"
+                    sample_rows = conn.execute(
+                        text(sample_query)).mappings().all()
+                    diagnostics[table]["samples"] = [
+                        dict(row) for row in sample_rows]
+
+            # Check the all_alerts view
+            count_query = "SELECT COUNT(*) FROM all_alerts"
+            count_result = conn.execute(text(count_query)).fetchone()
+            diagnostics["all_alerts_view"]["count"] = count_result[0] if count_result else 0
+
+            if diagnostics["all_alerts_view"]["count"] > 0:
+                sample_query = "SELECT * FROM all_alerts LIMIT 5"
+                sample_rows = conn.execute(text(sample_query)).mappings().all()
+                diagnostics["all_alerts_view"]["samples"] = [
+                    dict(row) for row in sample_rows]
+
+            # Add general database info
+            tables_query = "SELECT name FROM sqlite_master WHERE type='table'"
+            tables = conn.execute(text(tables_query)).fetchall()
+            diagnostics["database_info"]["tables"] = [t[0] for t in tables]
+
+            views_query = "SELECT name FROM sqlite_master WHERE type='view'"
+            views = conn.execute(text(views_query)).fetchall()
+            diagnostics["database_info"]["views"] = [v[0] for v in views]
+
+        return jsonify(diagnostics)
+    except Exception as e:
+        logger.error(f"Error in db_diagnostics: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':
