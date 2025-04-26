@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
 Script to clean up the KubERA database by removing old entries
-and merging duplicate events that occur close together in time.
+across all data source tables.
 """
 
 import argparse
 
-from db import cleanup_duplicate_events
+from db import cleanup_old_alerts
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Clean up the KubERA database by removing old entries and merging duplicates"
+        description="Clean up the KubERA database by removing old entries"
     )
     parser.add_argument(
         "--max-age",
@@ -28,16 +28,17 @@ def main():
 
     if args.dry_run:
         print(
-            f"DRY RUN: Would clean up events older than {args.max_age} days and merge duplicates")
+            f"DRY RUN: Would clean up events older than {args.max_age} days")
         return
 
-    result = cleanup_duplicate_events(max_age_days=args.max_age)
+    result = cleanup_old_alerts(max_age_days=args.max_age)
 
     print("Database cleanup complete!")
-    print(f"- Removed {result['old_records_removed']} old records")
-    print(f"- Merged {result['duplicates_merged']} duplicate records")
+    print(f"- Removed {result.get('k8s_alerts', 0)} Kubernetes alert records")
     print(
-        f"- Total reduction: {result['old_records_removed'] + result['duplicates_merged']} records")
+        f"- Removed {result.get('prometheus_alerts', 0)} Prometheus alert records")
+    print(f"- Removed {result.get('argocd_alerts', 0)} ArgoCD alert records")
+    print(f"- Total reduction: {sum(result.values())} records")
 
 
 if __name__ == "__main__":
