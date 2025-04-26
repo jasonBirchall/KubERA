@@ -4,7 +4,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_from_directory
 from sqlalchemy import text
 
 from agent.llm_agent import LlmAgent
@@ -377,17 +377,55 @@ def get_timeline_data():
     data_source = request.args.get('source', 'all')
     # Check if we should deduplicate by namespace/pod
     deduplicate = request.args.get('deduplicate', 'false').lower() == 'true'
+    # Allow overriding the reference date (for testing/debugging)
+    reference_date_str = request.args.get('reference_date', None)
 
     logger.debug(
         f"timeline_data called with hours={hours}, namespace={namespace}, source={data_source}")
 
-    # Get only active (ongoing) alerts
-    if deduplicate:
-        rows = get_active_alerts_deduplicated(
-            hours=hours, namespace=namespace, source=data_source)
+    # Use the reference date if provided, otherwise use system date
+    if reference_date_str:
+        try:
+            # Try to parse the provided date (supports various formats)
+            current_date = datetime.fromisoformat(
+                reference_date_str.replace('Z', '+00:00'))
+            logger.debug(f"Using provided reference date: {current_date}")
+        except ValueError:
+            # If invalid format, fall back to system date
+            current_date = datetime.now()
+            logger.warning(
+                f"Invalid reference_date format: {reference_date_str}, using system date")
     else:
-        rows = get_active_alerts(
-            hours=hours, namespace=namespace, source=data_source)
+        current_date = datetime.now()
+
+    cutoff = current_date - timedelta(hours=hours)
+    cutoff_iso = cutoff.isoformat() + "Z"
+
+    with engine.connect() as conn:
+        conditions = []
+        params = {}
+
+        # Apply time filtering using the reference date
+        conditions.append("(first_seen >= :cutoff AND last_seen IS NULL)")
+        params["cutoff"] = cutoff_iso
+
+        if namespace:
+            conditions.append("namespace = :namespace")
+            params["namespace"] = namespace
+
+        if data_source and data_source != 'all':
+            conditions.append("source = :source")
+            params["source"] = data_source
+
+        where_clause = " AND ".join(conditions)
+
+        query = f"""
+            SELECT * FROM all_alerts
+            WHERE {where_clause}
+            ORDER BY first_seen DESC
+        """
+        rows = [dict(row) for row in conn.execute(
+            text(query), params).mappings().all()]
 
     logger.debug(f"get_active_alerts returned {len(rows)} rows")
 
@@ -429,24 +467,55 @@ def timeline_history():
     # Check if we should show only active alerts or include resolved ones
     show_resolved = request.args.get(
         'show_resolved', 'false').lower() == 'true'
+    # Allow overriding the reference date (for testing/debugging)
+    reference_date_str = request.args.get('reference_date', None)
 
-    # Use appropriate function based on parameters
-    if show_resolved:
-        # Include resolved alerts
-        if deduplicate:
-            rows = get_all_alerts_deduplicated(
-                hours=hours, namespace=namespace, source=source)
-        else:
-            rows = get_all_alerts(
-                hours=hours, namespace=namespace, source=source)
+    # Use the reference date if provided, otherwise use system date
+    if reference_date_str:
+        try:
+            # Try to parse the provided date (supports various formats)
+            current_date = datetime.fromisoformat(
+                reference_date_str.replace('Z', '+00:00'))
+            logger.debug(f"Using provided reference date: {current_date}")
+        except ValueError:
+            # If invalid format, fall back to system date
+            current_date = datetime.now()
+            logger.warning(
+                f"Invalid reference_date format: {reference_date_str}, using system date")
     else:
-        # Only show active alerts
-        if deduplicate:
-            rows = get_active_alerts_deduplicated(
-                hours=hours, namespace=namespace, source=source)
+        current_date = datetime.now()
+
+    cutoff = current_date - timedelta(hours=hours)
+    cutoff_iso = cutoff.isoformat() + "Z"
+
+    with engine.connect() as conn:
+        conditions = []
+        params = {}
+
+        # Apply time filtering using the reference date
+        if show_resolved:
+            conditions.append("(first_seen >= :cutoff OR last_seen IS NULL)")
         else:
-            rows = get_active_alerts(
-                hours=hours, namespace=namespace, source=source)
+            conditions.append("first_seen >= :cutoff AND last_seen IS NULL")
+        params["cutoff"] = cutoff_iso
+
+        if namespace:
+            conditions.append("namespace = :namespace")
+            params["namespace"] = namespace
+
+        if source and source != 'all':
+            conditions.append("source = :source")
+            params["source"] = source
+
+        where_clause = " AND ".join(conditions)
+
+        query = f"""
+            SELECT * FROM all_alerts
+            WHERE {where_clause}
+            ORDER BY first_seen DESC
+        """
+        rows = [dict(row) for row in conn.execute(
+            text(query), params).mappings().all()]
 
     # Build the response using the results
     issue_groups = {}
@@ -1025,6 +1094,46 @@ def db_diagnostics():
         return jsonify({"error": str(e)}), 500
 
 
+# Debug route to get all active alerts without time filtering
+@app.route('/api/debug/all_active_alerts')
+def get_all_active_alerts_debug():
+    """Get all active alerts without time filtering for debugging purposes"""
+    with engine.connect() as conn:
+        query = """
+            SELECT * FROM all_alerts
+            WHERE last_seen IS NULL
+            ORDER BY first_seen DESC
+        """
+        rows = [dict(row)
+                for row in conn.execute(text(query)).mappings().all()]
+
+    # Build the response using the results from active alerts
+    issue_groups = {}
+    for r in rows:
+        # Create a unique key using issue_type and source
+        group_key = f"{r['issue_type']}_{r['source']}"
+
+        grp = issue_groups.setdefault(group_key, {
+            "name": r["issue_type"],
+            "severity": r["severity"],
+            "pods": [],
+            "count": 0,
+            "source": r["source"]
+        })
+        grp["pods"].append({
+            "name": r["name"],
+            "namespace": r["namespace"],
+            "start": r["first_seen"],
+            "end": r["last_seen"],
+            "source": r["source"]
+        })
+        grp["count"] += 1
+
+    result = list(issue_groups.values())
+    return jsonify(result)
+
+
 if __name__ == '__main__':
+    app.run(debug=True)
     app.run(debug=True)
     app.run(debug=True)
