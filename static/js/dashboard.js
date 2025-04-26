@@ -1004,46 +1004,5 @@ function renderAnalysis(data, source = 'kubernetes') {
     </div>
   `;
 
-  data.analysis.forEach(result => {
-    html += `
-      <div class="analysis-section ${sourceClass}">
-        <div class="section-title">Pod: ${result.pod_name}</div>
-        ${sourceInfo}
-
-        <div class="analysis-subsection">
-          <h4>Root Cause</h4>
-          <ul class="root-cause-list">
-            ${result.root_cause.map(cause => `<li>${cause}</li>`).join('')}
-          </ul>
-        </div>
-
-        <div class="analysis-subsection">
-          <h4>Recommended Actions</h4>
-          <ul class="root-cause-list">
-            ${result.recommended_actions.map(action => `<li>${action}</li>`).join('')}
-          </ul>
-        </div>
-
-        <div class="analysis-subsection">
-          <h4>Events</h4>
-          <div class="logs-container">
-            ${result.pod_events && result.pod_events.length > 0
-        ? result.pod_events.map(event => `<div class="log-line">${event}</div>`).join('')
-        : '<div class="log-line">No events available</div>'}
-          </div>
-        </div>
-
-        <div class="analysis-subsection">
-          <h4>Recent Logs</h4>
-          <div class="logs-container">
-            ${result.logs_excerpt && result.logs_excerpt.length > 0
-        ? result.logs_excerpt.map(log => `<div class="log-line">${log}</div>`).join('')
-        : '<div class="log-line">No logs available</div>'}
-          </div>
-        </div>
-      </div>
-    `;
-  });
-
   content.innerHTML = html;
 }
