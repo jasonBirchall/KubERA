@@ -954,6 +954,27 @@ function renderAnalysis(data, source = 'kubernetes') {
 
       <div class="analysis-subsection">
         <h4>Events Overview</h4>
+        ${data.events_metadata && data.events_metadata.length > 0 ?
+      `<div class="metadata-overview">
+            <div class="overview-item">
+              <span class="overview-label">Total Events:</span>
+              <span class="overview-value">${data.events_metadata.length}</span>
+            </div>
+            <div class="overview-item">
+              <span class="overview-label">Source:</span>
+              <span class="overview-value">${source.charAt(0).toUpperCase() + source.slice(1)}</span>
+            </div>
+            <div class="overview-item">
+              <span class="overview-label">Last Seen:</span>
+              <span class="overview-value">${data.events_metadata.length > 0 ?
+        KuberaUtils.formatTimestamp(data.events_metadata.sort((a, b) =>
+          new Date(b.timestamp) - new Date(a.timestamp))[0].timestamp) : 'N/A'}</span>
+            </div>
+            <div class="overview-item">
+              <span class="overview-label">Issue Type:</span>
+              <span class="overview-value">${data.issue_type || 'Unknown'}</span>
+            </div>
+          </div>` : ''}
         <div class="events-metadata">
           <table class="metadata-table">
             <thead>

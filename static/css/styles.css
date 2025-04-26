@@ -849,6 +849,33 @@ body {
   font-style: italic;
 }
 
+/* Metadata overview styles */
+.metadata-overview {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+  background-color: #1a1a25;
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.overview-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-label {
+  font-size: 11px;
+  color: #9090a7;
+  margin-bottom: 4px;
+}
+
+.overview-value {
+  font-size: 13px;
+  font-weight: 500;
+}
+
 /* Metadata table styles */
 .metadata-table {
   width: 100%;
