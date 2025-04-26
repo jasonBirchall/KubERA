@@ -496,7 +496,7 @@ def analyze_issue(issue_type):
     in the cluster that exhibit this `issue_type`.
     """
     try:
-        namespace = "default"  # or glean from request/query param
+        namespace = request.args.get('namespace', 'default')
         # The data source to analyze
         source = request.args.get('source', 'kubernetes')
         include_metadata = request.args.get(
@@ -504,12 +504,67 @@ def analyze_issue(issue_type):
         include_description = request.args.get(
             'include_description', 'false').lower() == 'true'
 
-        broken_pods = []
-        if source == 'kubernetes':
-            broken_pods = k8s_tool.list_broken_pods(namespace=namespace)
+        # For Prometheus sources, remove the "_prom" suffix if present
+        compare_issue = issue_type
+        if source == 'prometheus' and issue_type.endswith("_prom"):
+            compare_issue = issue_type[:-5]  # Remove "_prom" suffix
 
         analysis_results = []
         events_metadata = []
+
+        # Get events metadata from the database instead of querying the cluster directly
+        if include_metadata:
+            app.logger.info(
+                f"Fetching metadata from database for issue type: {compare_issue}, source: {source}")
+
+            # Query the SQLite database for events with this issue type
+            with engine.connect() as conn:
+                # Build query based on source and issue type
+                query = """
+                    SELECT namespace, pod_name, issue_type, severity,
+                           first_seen, last_seen, source
+                    FROM pod_alerts
+                    WHERE issue_type = :issue_type
+                """
+
+                # Add source filter if not 'all'
+                if source != 'all':
+                    query += " AND source = :source"
+
+                # Add namespace filter if not 'all'
+                if namespace != 'all':
+                    query += " AND namespace = :namespace"
+
+                # Order by most recent first
+                query += " ORDER BY first_seen DESC"
+
+                # Execute the query
+                params = {
+                    "issue_type": compare_issue,
+                    "source": source,
+                    "namespace": namespace
+                }
+
+                rows = conn.execute(text(query), params).mappings().all()
+
+                # Process the results
+                for row in rows:
+                    events_metadata.append({
+                        "pod_name": row["pod_name"],
+                        "namespace": row["namespace"],
+                        "source": row["source"],
+                        "timestamp": row["first_seen"],
+                        "last_seen": row["last_seen"],
+                        "severity": row["severity"]
+                    })
+
+            app.logger.info(f"Found {len(events_metadata)} events in database")
+
+        # For the analysis part, we still query K8s directly if needed
+        # (though we're not showing this in the UI anymore)
+        broken_pods = []
+        if source == 'kubernetes':
+            broken_pods = k8s_tool.list_broken_pods(namespace=namespace)
 
         for pod_name in broken_pods:
             # 1) Gather metadata
@@ -523,32 +578,10 @@ def analyze_issue(issue_type):
                 found_issue = issue_type
 
             # 2) Determine if it actually matches the requested issue_type
-            # For Prometheus sources, remove the "_prom" suffix if present
-            if source == 'prometheus' and issue_type.endswith("_prom"):
-                compare_issue = issue_type[:-5]  # Remove "_prom" suffix
-            else:
-                compare_issue = issue_type
-
             if found_issue != compare_issue:
                 continue  # Skip pods that are failing for different reasons
 
-            # Collect event metadata for the table display
-            if include_metadata and metadata:
-                # Get timestamps from metadata
-                timestamp = datetime.now(timezone.utc)
-                if "startTime" in metadata:
-                    try:
-                        timestamp = datetime.fromisoformat(
-                            metadata["startTime"].replace('Z', '+00:00'))
-                    except:
-                        pass
-
-                events_metadata.append({
-                    "pod_name": pod_name,
-                    "namespace": metadata.get("namespace", namespace),
-                    "source": source,
-                    "timestamp": timestamp.isoformat()
-                })
+            # Collect event metadata for the table display - REMOVED SINCE WE NOW GET FROM DB
 
             # 3) Fetch logs for context (only for Kubernetes source)
             if source == 'kubernetes':

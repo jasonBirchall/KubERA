@@ -876,6 +876,16 @@ body {
   font-weight: 500;
 }
 
+.no-events-message {
+  color: #7e7e8f;
+  font-style: italic;
+  padding: 12px;
+  text-align: center;
+  background-color: #1a1a25;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
 /* Metadata table styles */
 .metadata-table {
   width: 100%;

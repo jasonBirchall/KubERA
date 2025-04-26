@@ -923,8 +923,9 @@ function closeAnalysisPanel() {
 function renderAnalysis(data, source = 'kubernetes') {
   const content = document.querySelector('.analysis-content');
 
-  if (!data || !data.analysis || data.analysis.length === 0) {
-    content.innerHTML = `<div class="error-message">No analysis data available</div>`;
+  // Only check if data exists, not requiring analysis data
+  if (!data) {
+    content.innerHTML = `<div class="error-message">No data available</div>`;
     return;
   }
 
@@ -974,32 +975,33 @@ function renderAnalysis(data, source = 'kubernetes') {
               <span class="overview-label">Issue Type:</span>
               <span class="overview-value">${data.issue_type || 'Unknown'}</span>
             </div>
-          </div>` : ''}
-        <div class="events-metadata">
-          <table class="metadata-table">
-            <thead>
-              <tr>
-                <th>Source</th>
-                <th>Namespace</th>
-                <th>Pod</th>
-                <th>Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${data.events_metadata ?
-      data.events_metadata.map(event => `
+          </div>` :
+      '<div class="no-events-message">No events data available for this alert</div>'}
+        ${data.events_metadata && data.events_metadata.length > 0 ?
+      `<div class="events-metadata">
+            <table class="metadata-table">
+              <thead>
+                <tr>
+                  <th>Source</th>
+                  <th>Namespace</th>
+                  <th>Pod</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${data.events_metadata.map(event => `
                   <tr>
                     <td>${event.source || source}</td>
                     <td>${event.namespace || '-'}</td>
                     <td>${event.pod_name || '-'}</td>
                     <td>${KuberaUtils.formatTimestamp(event.timestamp)}</td>
                   </tr>
-                `).join('') :
-      '<tr><td colspan="4">No event metadata available</td></tr>'
+                `).join('')}
+              </tbody>
+            </table>
+          </div>` :
+      ''
     }
-            </tbody>
-          </table>
-        </div>
       </div>
     </div>
   `;
