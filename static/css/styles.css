@@ -436,7 +436,7 @@ body {
   .filter-panel {
     width: 200px;
   }
-  
+
   .analysis-panel {
     width: 90%;
   }
@@ -444,13 +444,15 @@ body {
 
 .dropdown-menu {
   border-radius: 4px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
+
 .dropdown-item {
   padding: 6px 12px;
   cursor: pointer;
   color: #d8d9da;
 }
+
 .dropdown-item:hover {
   background-color: #2c2c35;
 }
@@ -541,7 +543,8 @@ body {
   background-color: #111217;
   border: 1px solid #2c2c35;
   color: #d8d9da;
-  padding: 8px 30px; /* Extra padding for icons */
+  padding: 8px 30px;
+  /* Extra padding for icons */
   border-radius: 3px;
   font-size: 13px;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -588,10 +591,12 @@ body {
   position: absolute;
   right: -6px;
   top: 0;
-  width: 0; height: 0;
+  width: 0;
+  height: 0;
   border-top: 6px solid transparent;
   border-bottom: 6px solid transparent;
-  border-left: 6px solid currentColor; /* re‑uses severity colour */
+  border-left: 6px solid currentColor;
+  /* re‑uses severity colour */
 }
 
 .badge-kubernetes {
@@ -615,8 +620,10 @@ body {
 }
 
 /* Table adjustments for the new column */
-.events-table th, .events-table td {
-  padding: 8px 12px; /* Slightly reduced padding */
+.events-table th,
+.events-table td {
+  padding: 8px 12px;
+  /* Slightly reduced padding */
 }
 
 /* Highligh rows on hover with source-specific colors */
@@ -627,6 +634,7 @@ body {
 .events-table tr:hover.kubernetes-row {
   background-color: rgba(56, 114, 242, 0.05);
 }
+
 /* Prometheus-specific styles */
 .prometheus-event {
   border: 2px dashed white;
@@ -691,7 +699,8 @@ body {
 
 /* ArgoCD specific styles */
 .badge-argocd {
-  background-color: rgba(102, 51, 153, 0.15); /* Purple */
+  background-color: rgba(102, 51, 153, 0.15);
+  /* Purple */
   color: #9966cc;
   padding: 2px 8px;
   border-radius: 3px;
@@ -810,4 +819,64 @@ body {
 .timeline-event.argocd {
   border: 2px dashed #9966cc;
   opacity: 0.9;
+}
+
+/* Add these styles for the new alert description and metadata components */
+
+/* Alert description section */
+.alert-description {
+  margin-bottom: 24px;
+  border-bottom: 1px solid #2c2c35;
+  padding-bottom: 16px;
+}
+
+.alert-summary {
+  background-color: #1e1e2a;
+  padding: 12px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #d8d9da;
+  border-left: 4px solid #3872f2;
+  margin-bottom: 16px;
+}
+
+.description-source {
+  font-size: 11px;
+  color: #7e7e8f;
+  margin-top: 8px;
+  text-align: right;
+  font-style: italic;
+}
+
+/* Metadata table styles */
+.metadata-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.metadata-table th,
+.metadata-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid #2c2c35;
+}
+
+.metadata-table th {
+  font-weight: 500;
+  color: #9090a7;
+  background-color: #1a1a25;
+}
+
+.metadata-table tr:hover {
+  background-color: #1e1e2a;
+}
+
+.events-metadata {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #2c2c35;
+  border-radius: 4px;
 }
