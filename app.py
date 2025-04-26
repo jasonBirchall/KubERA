@@ -9,7 +9,13 @@ from agent.llm_agent import LlmAgent
 from agent.tools.argocd_tool import ArgoCDTool
 from agent.tools.k8s_tool import K8sTool
 from agent.tools.prometheus_tool import PrometheusTool
-from db import engine, init_db, migrate_db, record_failure
+from db import (engine, get_all_alerts, init_db, migrate_db,
+                record_argocd_alert, record_k8s_failure,
+                record_prometheus_alert)
+
+# Set up logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
 
 k8s_tool = K8sTool()
 prometheus_tool = PrometheusTool()  # Using default localhost:9090
@@ -81,8 +87,7 @@ def get_namespaces():
     output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT)
 
     namespaces = output.decode().split()
-    app.logger.debug(
-        f"[DEBUG] Namespaces identified for filter = {namespaces}")
+    logger.debug(f"Namespaces identified for filter = {namespaces}")
 
     return jsonify(namespaces)
 
@@ -117,7 +122,7 @@ def get_kube_contexts():
         return jsonify(context_list)
 
     except subprocess.CalledProcessError as e:
-        app.logger.error(f"Error fetching Kubernetes contexts: {str(e)}")
+        logger.error(f"Error fetching Kubernetes contexts: {str(e)}")
         # Return sample contexts as fallback
         fallback_contexts = [
             {"name": "kubera-local", "current": True},
@@ -146,7 +151,7 @@ def switch_kube_context(context_name):
         })
 
     except subprocess.CalledProcessError as e:
-        app.logger.error(f"Error switching Kubernetes context: {str(e)}")
+        logger.error(f"Error switching Kubernetes context: {str(e)}")
         return jsonify({
             "success": False,
             "message": f"Failed to switch context: {str(e)}"
@@ -190,46 +195,62 @@ def get_timeline_data():
             })
             grp["count"] += 1
 
-            record_failure(namespace, pod, issue, severity,
-                           first_seen, last_seen, source="kubernetes")
+            record_k8s_failure(namespace, pod, issue, severity,
+                               first_seen, last_seen)
 
     if data_source in ['all', 'argocd']:
         # Get ArgoCD alerts
         argocd_alerts = argocd_tool.get_application_alerts(hours)
-        app.logger.debug(f"[DEBUG] ArgoCD alerts = {argocd_alerts}")
+        logger.debug(f"ArgoCD alerts = {argocd_alerts}")
 
-        # Verify alerts have the correct source
+        # Process ArgoCD alerts
         for alert in argocd_alerts:
-            # Make sure the alert has the source set to 'argocd'
-            if alert.get('source') != 'argocd':
-                alert['source'] = 'argocd'
+            issue_type = alert.get("name")
+            severity = alert.get("severity", "medium")
 
-            # Make sure all pods have the source set to 'argocd'
-            for pod in alert.get('pods', []):
-                if pod.get('source') != 'argocd':
-                    pod['source'] = 'argocd'
+            # Add the alert to the response
+            grp = issue_groups.setdefault(f"{issue_type}_argocd", {
+                "name": issue_type,
+                "severity": severity,
+                "pods": [],  # will contain applications instead of pods
+                "count": 0,
+                "source": "argocd"
+            })
 
-    # Similar check in the get_cluster_issues function:
-    if data_source in ['all', 'argocd']:
-        argocd_alerts = argocd_tool.get_application_alerts(hours=1)
-        app.logger.debug(f"[DEBUG] ArgoCD alerts = {argocd_alerts}")
+            # Process each application in the alert
+            for app in alert.get("pods", []):
+                app_name = app.get("name")
+                start_time = datetime.fromisoformat(
+                    app.get("start").replace("Z", "+00:00"))
 
-        # Verify alerts have the correct source
-        for alert in argocd_alerts:
-            # Make sure the alert has the source set to 'argocd'
-            if alert.get('source') != 'argocd':
-                alert['source'] = 'argocd'
+                end_iso = app.get("end")
+                end_time = None if end_iso is None else datetime.fromisoformat(
+                    end_iso.replace("Z", "+00:00"))
 
-            # Make sure all pods have the source set to 'argocd'
-            for pod in alert.get('pods', []):
-                if pod.get('source') != 'argocd':
-                    pod['source'] = 'argocd'
+                # Get sync and health status if available
+                sync_status = app.get("sync_status")
+                health_status = app.get("health_status")
+
+                grp["pods"].append({
+                    "name": app_name,
+                    "namespace": None,  # ArgoCD doesn't use namespace this way
+                    "start": app.get("start"),
+                    "end": app.get("end"),
+                    "source": "argocd"
+                })
+                grp["count"] += 1
+
+                # Record in the database
+                if issue_type:  # Ensure issue_type is not None
+                    record_argocd_alert(app_name, issue_type, severity,
+                                        start_time, end_time,
+                                        sync_status, health_status)
 
     # Get Prometheus data if requested
     if data_source in ['all', 'prometheus']:
         # Attempt to get real Prometheus data
         prom_alerts = prometheus_tool.get_pod_alerts(hours, namespace)
-        app.logger.debug(f"[DEBUG] Prometheus alerts = {prom_alerts}")
+        logger.debug(f"Prometheus alerts = {prom_alerts}")
 
         # Process Prometheus alerts
         for alert in prom_alerts:
@@ -263,8 +284,11 @@ def get_timeline_data():
                 })
                 grp["count"] += 1
 
-                record_failure(pod_namespace, pod_name, alert_name, severity,
-                               start_time, end_time, source="prometheus")
+                # Get the metric value if available
+                metric_value = pod.get("value")
+
+                record_prometheus_alert(pod_namespace, pod_name, alert_name, severity,
+                                        start_time, end_time, metric_value)
 
     return jsonify(list(issue_groups.values()))
 
@@ -274,30 +298,12 @@ def timeline_history():
     hours = request.args.get('hours', 24, type=int)
     # 'kubernetes', 'prometheus', or 'all'
     source = request.args.get('source', 'all')
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    namespace = request.args.get('namespace', None)
 
-    # Build the source filter condition
-    source_filter = ""
-    if source == 'kubernetes':
-        source_filter = "AND source = 'kubernetes'"
-    elif source == 'prometheus':
-        source_filter = "AND source = 'prometheus'"
+    # Use the new get_all_alerts function instead of direct SQL queries
+    rows = get_all_alerts(hours=hours, namespace=namespace, source=source)
 
-    # ---- open a connection and run the query ----
-    with engine.connect() as conn:
-        rows = conn.execute(
-            text(f"""
-                SELECT namespace, pod_name, issue_type, severity,
-                       first_seen, last_seen, source
-                  FROM pod_alerts
-                 WHERE (first_seen >= :cutoff
-                    OR last_seen IS NULL)
-                    {source_filter}
-            """),
-            {"cutoff": cutoff.isoformat()}
-        ).mappings().all()          # .mappings() → rows as dict‑like objects
-
-    # ---- build the response exactly as before, but including source ----
+    # Build the response using the results from get_all_alerts
     issue_groups = {}
     for r in rows:
         # Create a unique key using issue_type and source
@@ -311,7 +317,7 @@ def timeline_history():
             "source": r["source"]
         })
         grp["pods"].append({
-            "name": r["pod_name"],
+            "name": r["name"],
             "namespace": r["namespace"],
             "start": r["first_seen"],
             "end": r["last_seen"],
@@ -347,7 +353,7 @@ def get_cluster_issues():
     # Get Kubernetes data if requested
     if data_source in ['all', 'kubernetes']:
         broken_pods = k8s_tool.list_broken_pods(namespace=namespace)
-        app.logger.debug(f"[DEBUG] Broken pods = {broken_pods}")
+        logger.debug(f"Broken pods = {broken_pods}")
 
         for pod_name in broken_pods:
             metadata = k8s_tool.gather_metadata(namespace, pod_name)
@@ -401,14 +407,15 @@ def get_cluster_issues():
     # Get ArgoCD data if requested
     if data_source in ['all', 'argocd']:
         argocd_alerts = argocd_tool.get_application_alerts(hours=1)
+        logger.debug(f"ArgoCD alerts = {argocd_alerts}")
 
         # Process ArgoCD alerts
         for alert in argocd_alerts:
-            alert_name = alert["name"]
-            severity = alert["severity"]
+            alert_name = alert.get("name")
+            severity = alert.get("severity", "medium")
 
-            if f"{alert_name}_argo" not in issue_groups:
-                issue_groups[f"{alert_name}_argo"] = {
+            if f"{alert_name}_argocd" not in issue_groups:
+                issue_groups[f"{alert_name}_argocd"] = {
                     "name": alert_name,
                     "severity": severity,
                     "pods": [],
@@ -416,17 +423,15 @@ def get_cluster_issues():
                     "source": "argocd"
                 }
 
-            for pod in alert.get("pods", []):
-                issue_groups[f"{alert_name}_argo"]["pods"].append({
-                    "name": pod.get("name"),
-                    "namespace": pod.get("namespace", namespace),
+            for app in alert.get("pods", []):
+                issue_groups[f"{alert_name}_argocd"]["pods"].append({
+                    "name": app.get("name"),
+                    "namespace": None,  # ArgoCD doesn't use namespace
                     "timestamp": datetime.now().isoformat(),
-                    "source": "argocd",
-                    "details": pod.get("details", {})
+                    "source": "argocd"
                 })
-                issue_groups[f"{alert_name}_argo"]["count"] += 1
+                issue_groups[f"{alert_name}_argocd"]["count"] += 1
 
-    app.logger.debug(f"[DEBUG] Issue groups = {issue_groups}")
     return jsonify(list(issue_groups.values()))
 
 
@@ -484,7 +489,7 @@ def analyze_argocd_app(app_name):
 
         return jsonify({"analysis": analysis_result})
     except Exception as e:
-        app.logger.error(
+        logger.error(
             f"Error analyzing ArgoCD application '{app_name}': {str(e)}")
         return jsonify({"error": str(e)}), 500
 
@@ -514,7 +519,7 @@ def analyze_issue(issue_type):
 
         # Get events metadata from the database instead of querying the cluster directly
         if include_metadata:
-            app.logger.info(
+            logger.info(
                 f"Fetching metadata from database for issue type: {compare_issue}, source: {source}")
 
             # Query the SQLite database for events with this issue type
@@ -558,7 +563,7 @@ def analyze_issue(issue_type):
                         "severity": row["severity"]
                     })
 
-            app.logger.info(f"Found {len(events_metadata)} events in database")
+            logger.info(f"Found {len(events_metadata)} events in database")
 
         # For the analysis part, we still query K8s directly if needed
         # (though we're not showing this in the UI anymore)
@@ -650,7 +655,7 @@ def analyze_issue(issue_type):
                 compare_issue = issue_type[:-5]  # Remove "_prom" suffix
 
             if compare_issue in fallback_descriptions:
-                app.logger.info(
+                logger.info(
                     f"Using fallback description for issue type: {compare_issue}")
                 description = fallback_descriptions[compare_issue]
             else:
@@ -673,7 +678,7 @@ def analyze_issue(issue_type):
                     if len(description) > 500:
                         description = description[:497] + "..."
                 except Exception as e:
-                    app.logger.error(
+                    logger.error(
                         f"Error generating description for issue_type '{issue_type}': {str(e)}")
                     # Default description if no fallback found
                     description = f"{issue_type}: This alert may indicate a problem with your Kubernetes resources or applications. Check the pod events and logs for more details."
@@ -693,7 +698,7 @@ def analyze_issue(issue_type):
         return jsonify(response)
 
     except Exception as e:
-        print(f"Error analyzing issue '{issue_type}': {str(e)}")
+        logger.error(f"Error analyzing issue '{issue_type}': {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -746,7 +751,7 @@ def generate_alert_description():
     try:
         # Check if we have a fallback for this alert type
         if alert_type in fallback_descriptions:
-            app.logger.info(
+            logger.info(
                 f"Using fallback description for alert type: {alert_type}")
             return jsonify({
                 "success": True,
@@ -779,7 +784,7 @@ def generate_alert_description():
         })
 
     except Exception as e:
-        app.logger.error(f"Error generating alert description: {str(e)}")
+        logger.error(f"Error generating alert description: {str(e)}")
 
         # Try to use fallback if available, otherwise return a generic message
         if alert_type in fallback_descriptions:
