@@ -161,7 +161,7 @@ def switch_kube_context(context_name):
 @app.route('/api/timeline_data')
 def get_timeline_data():
     hours = request.args.get('hours', 6, type=int)
-    namespace = request.args.get('namespace', 'default')
+    namespace = request.args.get('namespace', None)
     # 'kubernetes', 'prometheus', or 'all'
     data_source = request.args.get('source', 'all')
     horizon = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -170,33 +170,38 @@ def get_timeline_data():
 
     # Get Kubernetes data if requested
     if data_source in ['all', 'kubernetes']:
-        for pod in k8s_tool.list_broken_pods(namespace):
-            # Get the failure window for this pod
-            first_seen, last_seen = k8s_tool.failure_window(
-                namespace, pod, horizon)
-            issue = k8s_tool.determine_issue_type(
-                k8s_tool.gather_metadata(namespace, pod))
-            severity = k8s_tool.determine_severity(issue)
+        # Get list of all namespaces if none specified
+        namespaces_to_check = [
+            namespace] if namespace else k8s_tool.get_namespaces()
 
-            grp = issue_groups.setdefault(f"{issue}_k8s", {
-                "name": issue,
-                "severity": severity,
-                "pods": [],
-                "count": 0,
-                "source": "kubernetes"
-            })
+        for ns in namespaces_to_check:
+            for pod in k8s_tool.list_broken_pods(ns):
+                # Get the failure window for this pod
+                first_seen, last_seen = k8s_tool.failure_window(
+                    ns, pod, horizon)
+                issue = k8s_tool.determine_issue_type(
+                    k8s_tool.gather_metadata(ns, pod))
+                severity = k8s_tool.determine_severity(issue)
 
-            grp["pods"].append({
-                "name": pod,
-                "namespace": namespace,
-                "start": first_seen.isoformat(),
-                "end": None if last_seen is None else last_seen.isoformat(),  # None → still occurring
-                "source": "kubernetes"
-            })
-            grp["count"] += 1
+                grp = issue_groups.setdefault(f"{issue}_k8s", {
+                    "name": issue,
+                    "severity": severity,
+                    "pods": [],
+                    "count": 0,
+                    "source": "kubernetes"
+                })
 
-            record_k8s_failure(namespace, pod, issue, severity,
-                               first_seen, last_seen)
+                grp["pods"].append({
+                    "name": pod,
+                    "namespace": ns,
+                    "start": first_seen.isoformat(),
+                    "end": None if last_seen is None else last_seen.isoformat(),  # None → still occurring
+                    "source": "kubernetes"
+                })
+                grp["count"] += 1
+
+                record_k8s_failure(ns, pod, issue, severity,
+                                   first_seen, last_seen)
 
     if data_source in ['all', 'argocd']:
         # Get ArgoCD alerts
@@ -345,40 +350,47 @@ def get_prometheus_data():
 
 @app.route('/api/cluster_issues')
 def get_cluster_issues():
-    namespace = "default"
+    # Get namespace from query params, or check all namespaces if not specified
+    namespace = request.args.get('namespace', None)
     # 'kubernetes', 'prometheus', 'argocd', or 'all'
     data_source = request.args.get('source', 'all')
     issue_groups = {}
 
     # Get Kubernetes data if requested
     if data_source in ['all', 'kubernetes']:
-        broken_pods = k8s_tool.list_broken_pods(namespace=namespace)
-        logger.debug(f"Broken pods = {broken_pods}")
+        # Get list of all namespaces if none specified
+        namespaces_to_check = [
+            namespace] if namespace else k8s_tool.get_namespaces()
 
-        for pod_name in broken_pods:
-            metadata = k8s_tool.gather_metadata(namespace, pod_name)
-            issue_type = k8s_tool.determine_issue_type(metadata)
-            severity = k8s_tool.determine_severity(issue_type)
+        for ns in namespaces_to_check:
+            broken_pods = k8s_tool.list_broken_pods(namespace=ns)
+            logger.debug(f"Broken pods in namespace {ns} = {broken_pods}")
 
-            if issue_type not in issue_groups:
-                issue_groups[issue_type] = {
-                    "name": issue_type,
-                    "severity": severity,
-                    "pods": [],
-                    "count": 0,
+            for pod_name in broken_pods:
+                metadata = k8s_tool.gather_metadata(ns, pod_name)
+                issue_type = k8s_tool.determine_issue_type(metadata)
+                severity = k8s_tool.determine_severity(issue_type)
+
+                if issue_type not in issue_groups:
+                    issue_groups[issue_type] = {
+                        "name": issue_type,
+                        "severity": severity,
+                        "pods": [],
+                        "count": 0,
+                        "source": "kubernetes"
+                    }
+
+                issue_groups[issue_type]["pods"].append({
+                    "name": pod_name,
+                    "namespace": ns,
+                    "timestamp": datetime.now().isoformat(),
                     "source": "kubernetes"
-                }
-
-            issue_groups[issue_type]["pods"].append({
-                "name": pod_name,
-                "namespace": namespace,
-                "timestamp": datetime.now().isoformat(),
-                "source": "kubernetes"
-            })
-            issue_groups[issue_type]["count"] += 1
+                })
+                issue_groups[issue_type]["count"] += 1
 
     # Get Prometheus data if requested
     if data_source in ['all', 'prometheus']:
+        # Get alerts from Prometheus for specific namespace or all namespaces
         prom_alerts = prometheus_tool.get_pod_alerts(
             hours=1, namespace=namespace)
         # Process Prometheus alerts
@@ -398,7 +410,7 @@ def get_cluster_issues():
             for pod in alert.get("pods", []):
                 issue_groups[f"{alert_name}_prom"]["pods"].append({
                     "name": pod.get("name"),
-                    "namespace": pod.get("namespace", namespace),
+                    "namespace": pod.get("namespace", namespace or "default"),
                     "timestamp": datetime.now().isoformat(),
                     "source": "prometheus"
                 })
