@@ -1099,6 +1099,13 @@ body {
   margin-left: 40%; /* Move timeline view to the right */
   width: 60%;
   transition: margin-left 0.3s ease, width 0.3s ease;
+  padding-left: 0; /* Remove any padding that might create gap */
+}
+
+/* Fix for the analysis panel to make it flush with the detail panel */
+.content-area.with-detail-panel .analysis-panel {
+  width: 60%; /* Make it exactly match the timeline view width */
+  right: 0;   /* Ensure it's aligned to the right edge */
 }
 
 /* Responsive adjustments */
@@ -1109,6 +1116,10 @@ body {
   
   .content-area.with-detail-panel .timeline-view {
     margin-left: 50%;
+    width: 50%;
+  }
+  
+  .content-area.with-detail-panel .analysis-panel {
     width: 50%;
   }
 }
@@ -1123,4 +1134,3 @@ body {
     width: 100%;
     display: none; /* Hide timeline on mobile when detail is open */
   }
-}

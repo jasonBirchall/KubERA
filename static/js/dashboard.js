@@ -1102,6 +1102,58 @@ function initializeClickableMetadataRows() {
 }
 
 /**
+ * Makes metadata table rows clickable and shows details in a side panel
+ */
+function initializeClickableMetadataRows() {
+  // Function to set up event listeners on metadata table rows
+  function setupRowClickHandlers() {
+    const metadataTableRows = document.querySelectorAll('#analysisPanel .analysis-content .metadata-table tbody tr');
+    
+    metadataTableRows.forEach(row => {
+      // Add a visual indicator that rows are clickable
+      row.classList.add('clickable-row');
+      
+      row.addEventListener('click', function() {
+        // Get data from the row cells
+        const cells = this.querySelectorAll('td');
+        if (cells.length < 3) return; // Ensure we have enough data
+        
+        const podData = {
+          source: cells[0]?.textContent || 'Unknown',
+          podName: cells[1]?.textContent || 'Unknown',
+          namespace: cells[2]?.textContent || 'Unknown'
+        };
+        
+        // Show the detail panel with this data
+        showPodDetailPanel(podData);
+      });
+    });
+  }
+  
+  // Create an observer to detect when new rows are added to the analysis panel
+  // This is necessary because the analysis panel content might be loaded dynamically
+  const analysisPanel = document.getElementById('analysisPanel');
+  if (analysisPanel) {
+    const observer = new MutationObserver(function(mutations) {
+      // Check if our table rows exist now
+      const tableRows = document.querySelectorAll('#analysisPanel .analysis-content .metadata-table tbody tr');
+      if (tableRows.length > 0) {
+        setupRowClickHandlers();
+      }
+    });
+    
+    // Start observing changes to the analysis panel content
+    observer.observe(analysisPanel, { 
+      childList: true, 
+      subtree: true 
+    });
+    
+    // Initial setup in case rows are already present
+    setupRowClickHandlers();
+  }
+}
+
+/**
  * Creates and shows the pod detail panel
  */
 function showPodDetailPanel(podData) {
@@ -1162,6 +1214,14 @@ function showPodDetailPanel(podData) {
     
     // Add a class to the content area to enable split view
     contentArea.classList.add('with-detail-panel');
+    
+    // Adjust the analysis panel if it exists and is open
+    const analysisPanel = document.getElementById('analysisPanel');
+    if (analysisPanel && analysisPanel.classList.contains('open')) {
+      // Make sure analysis panel width matches the timeline view width
+      // This ensures they're flush against each other with no gap
+      analysisPanel.style.width = '60%';
+    }
   }
 }
 
@@ -1177,6 +1237,12 @@ function closePodDetailPanel() {
     const contentArea = document.querySelector('.content-area');
     if (contentArea) {
       contentArea.classList.remove('with-detail-panel');
+      
+      // Reset the analysis panel width if it exists and is open
+      const analysisPanel = document.getElementById('analysisPanel');
+      if (analysisPanel && analysisPanel.classList.contains('open')) {
+        analysisPanel.style.width = '';  // Reset to CSS default
+      }
     }
   }
 }
