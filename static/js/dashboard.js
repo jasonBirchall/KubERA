@@ -1051,3 +1051,137 @@ function renderAnalysis(data, source = 'kubernetes') {
 
   content.innerHTML = html;
 }
+
+function initializeClickableMetadataRows() {
+  // Function to set up event listeners on metadata table rows
+  function setupRowClickHandlers() {
+    const metadataTableRows = document.querySelectorAll('#analysisPanel .analysis-content .metadata-table tbody tr');
+    
+    metadataTableRows.forEach(row => {
+      // Add a visual indicator that rows are clickable
+      row.classList.add('clickable-row');
+      
+      row.addEventListener('click', function() {
+        // Get data from the row cells
+        const cells = this.querySelectorAll('td');
+        if (cells.length < 3) return; // Ensure we have enough data
+        
+        const podData = {
+          source: cells[0]?.textContent || 'Unknown',
+          podName: cells[1]?.textContent || 'Unknown',
+          namespace: cells[2]?.textContent || 'Unknown'
+        };
+        
+        // Show the detail panel with this data
+        showPodDetailPanel(podData);
+      });
+    });
+  }
+  
+  // Create an observer to detect when new rows are added to the analysis panel
+  // This is necessary because the analysis panel content might be loaded dynamically
+  const analysisPanel = document.getElementById('analysisPanel');
+  if (analysisPanel) {
+    const observer = new MutationObserver(function(mutations) {
+      // Check if our table rows exist now
+      const tableRows = document.querySelectorAll('#analysisPanel .analysis-content .metadata-table tbody tr');
+      if (tableRows.length > 0) {
+        setupRowClickHandlers();
+      }
+    });
+    
+    // Start observing changes to the analysis panel content
+    observer.observe(analysisPanel, { 
+      childList: true, 
+      subtree: true 
+    });
+    
+    // Initial setup in case rows are already present
+    setupRowClickHandlers();
+  }
+}
+
+/**
+ * Creates and shows the pod detail panel
+ */
+function showPodDetailPanel(podData) {
+  // Check if detail panel already exists, remove it if it does
+  let detailPanel = document.getElementById('podDetailPanel');
+  if (detailPanel) {
+    detailPanel.remove();
+  }
+  
+  // Create the pod detail panel
+  detailPanel = document.createElement('div');
+  detailPanel.id = 'podDetailPanel';
+  detailPanel.className = 'pod-detail-panel';
+  
+  // Create panel content
+  detailPanel.innerHTML = `
+    <div class="detail-panel-header">
+      <h3>Pod Details</h3>
+      <button class="detail-panel-close" onclick="closePodDetailPanel()">×</button>
+    </div>
+    <div class="detail-panel-content">
+      <div class="detail-section">
+        <div class="detail-property">
+          <span class="property-label">Source:</span>
+          <span class="property-value">${podData.source}</span>
+        </div>
+        <div class="detail-property">
+          <span class="property-label">Pod Name:</span>
+          <span class="property-value">${podData.podName}</span>
+        </div>
+        <div class="detail-property">
+          <span class="property-label">Namespace:</span>
+          <span class="property-value">${podData.namespace}</span>
+        </div>
+      </div>
+      
+      <div class="detail-section">
+        <h4>Recent Activities</h4>
+        <div class="activity-timeline">
+          <div class="activity-item">
+            <span class="activity-time">Just now</span>
+            <span class="activity-desc">Detail panel opened</span>
+          </div>
+          <div class="activity-item">
+            <span class="activity-time">1m ago</span>
+            <span class="activity-desc">Status check performed</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Adjust the layout
+  const contentArea = document.querySelector('.content-area');
+  if (contentArea) {
+    // Add the detail panel to the content area
+    contentArea.appendChild(detailPanel);
+    
+    // Add a class to the content area to enable split view
+    contentArea.classList.add('with-detail-panel');
+  }
+}
+
+/**
+ * Closes the pod detail panel
+ */
+function closePodDetailPanel() {
+  const detailPanel = document.getElementById('podDetailPanel');
+  if (detailPanel) {
+    detailPanel.remove();
+    
+    // Remove the split view class
+    const contentArea = document.querySelector('.content-area');
+    if (contentArea) {
+      contentArea.classList.remove('with-detail-panel');
+    }
+  }
+}
+
+// Initialize clickable rows when the page loads
+document.addEventListener('DOMContentLoaded', function() {
+  initializeClickableMetadataRows();
+});
