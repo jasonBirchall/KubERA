@@ -1,6 +1,6 @@
 import hashlib
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine, inspect, text
 
@@ -153,8 +153,10 @@ def record_k8s_failure(namespace: str,
         first_dt: When the issue was first seen (datetime object)
         last_dt: When the issue was last seen or None if still ongoing
     """
-    first_iso = first_dt.replace(tzinfo=None).isoformat() + "Z"
-    last_iso = None if last_dt is None else last_dt.isoformat() + "Z"
+    # Convert to UTC and format as ISO string
+    first_iso = first_dt.astimezone(timezone.utc).isoformat()
+    last_iso = None if last_dt is None else last_dt.astimezone(
+        timezone.utc).isoformat()
 
     # Generate the event hash
     event_hash = create_event_hash(namespace, pod_name, issue, "kubernetes")
@@ -210,14 +212,16 @@ def record_prometheus_alert(namespace: str,
     Args:
         namespace: The kubernetes namespace
         pod_name: The name of the pod
-        alert_name: The name of the Prometheus alert
+        alert_name: The name of the alert
         severity: Severity level ("high", "medium", "low")
-        first_dt: When the issue was first seen (datetime object)
-        last_dt: When the issue was last seen or None if still ongoing
-        metric_value: The value of the metric that triggered the alert
+        first_dt: When the alert was first seen (datetime object)
+        last_dt: When the alert was last seen or None if still ongoing
+        metric_value: Optional metric value associated with the alert
     """
-    first_iso = first_dt.replace(tzinfo=None).isoformat() + "Z"
-    last_iso = None if last_dt is None else last_dt.isoformat() + "Z"
+    # Convert to UTC and format as ISO string
+    first_iso = first_dt.astimezone(timezone.utc).isoformat()
+    last_iso = None if last_dt is None else last_dt.astimezone(
+        timezone.utc).isoformat()
 
     # Generate the event hash
     event_hash = create_event_hash(
@@ -237,11 +241,11 @@ def record_prometheus_alert(namespace: str,
             conn.execute(text("""
                 UPDATE prometheus_alerts
                 SET last_seen = :last,
-                    metric_value = COALESCE(:metric_value, metric_value)
+                    metric_value = :value
                 WHERE id = :id
             """), {
                 'last': last_iso,
-                'metric_value': metric_value,
+                'value': metric_value,
                 'id': existing[0]
             })
         else:
@@ -253,7 +257,7 @@ def record_prometheus_alert(namespace: str,
                 )
                 VALUES (
                     :ns, :pod, :alert, :sev,
-                    :first, :last, :hash, :metric_value
+                    :first, :last, :hash, :value
                 )
             """), {
                 'ns': namespace,
@@ -263,7 +267,7 @@ def record_prometheus_alert(namespace: str,
                 'first': first_iso,
                 'last': last_iso,
                 'hash': event_hash,
-                'metric_value': metric_value
+                'value': metric_value
             })
 
 
@@ -286,10 +290,12 @@ def record_argocd_alert(application_name: str,
         sync_status: The sync status of the application
         health_status: The health status of the application
     """
-    first_iso = first_dt.replace(tzinfo=None).isoformat() + "Z"
-    last_iso = None if last_dt is None else last_dt.isoformat() + "Z"
+    # Convert to UTC and format as ISO string
+    first_iso = first_dt.astimezone(timezone.utc).isoformat()
+    last_iso = None if last_dt is None else last_dt.astimezone(
+        timezone.utc).isoformat()
 
-    # Generate the event hash - ArgoCD doesn't use namespace
+    # Generate the event hash
     event_hash = create_event_hash(
         None, application_name, issue_type, "argocd")
 
@@ -307,8 +313,8 @@ def record_argocd_alert(application_name: str,
             conn.execute(text("""
                 UPDATE argocd_alerts
                 SET last_seen = :last,
-                    sync_status = COALESCE(:sync, sync_status),
-                    health_status = COALESCE(:health, health_status)
+                    sync_status = :sync,
+                    health_status = :health
                 WHERE id = :id
             """), {
                 'last': last_iso,

@@ -45,6 +45,18 @@ def collect_and_store_data():
         # Make horizon timezone-aware with UTC timezone
         horizon = datetime.now(timezone.utc) - timedelta(hours=hours)
 
+        # Helper function to validate datetime
+        def validate_datetime(dt):
+            if not dt:
+                return None
+            if not isinstance(dt, datetime):
+                logger.error(f"Invalid datetime value: {dt}")
+                return None
+            # Ensure UTC timezone
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+
         # Collect Kubernetes data
         k8s_count = 0
         namespaces = k8s_tool.get_namespaces()
@@ -59,6 +71,17 @@ def collect_and_store_data():
                 # Get the failure window for this pod
                 first_seen, last_seen = k8s_tool.failure_window(
                     ns, pod, horizon)
+
+                # Validate first_seen
+                first_seen = validate_datetime(first_seen)
+                if not first_seen:
+                    logger.warning(
+                        f"Skipping K8s pod {ns}/{pod} due to missing first_seen timestamp")
+                    continue
+
+                # Validate last_seen (can be None)
+                last_seen = validate_datetime(last_seen)
+
                 issue = k8s_tool.determine_issue_type(
                     k8s_tool.gather_metadata(ns, pod))
                 severity = k8s_tool.determine_severity(issue)
@@ -84,12 +107,31 @@ def collect_and_store_data():
 
             for app in alert.get("pods", []):
                 app_name = app.get("name")
-                start_time = datetime.fromisoformat(
-                    app.get("start").replace("Z", "+00:00"))
+                if not app_name:
+                    logger.warning(
+                        "Skipping ArgoCD alert due to missing app name")
+                    continue
+
+                try:
+                    start_time = datetime.fromisoformat(
+                        app.get("start").replace("Z", "+00:00"))
+                    start_time = validate_datetime(start_time)
+                    if not start_time:
+                        continue
+                except (ValueError, AttributeError) as e:
+                    logger.warning(
+                        f"Skipping ArgoCD alert for {app_name} due to invalid start time: {e}")
+                    continue
 
                 end_iso = app.get("end")
-                end_time = None if end_iso is None else datetime.fromisoformat(
-                    end_iso.replace("Z", "+00:00"))
+                try:
+                    end_time = None if end_iso is None else datetime.fromisoformat(
+                        end_iso.replace("Z", "+00:00"))
+                    end_time = validate_datetime(end_time)
+                except ValueError as e:
+                    logger.warning(
+                        f"Invalid end time for {app_name}, setting to None: {e}")
+                    end_time = None
 
                 # Get sync and health status if available
                 sync_status = app.get("sync_status")
@@ -98,7 +140,7 @@ def collect_and_store_data():
                 logger.debug(
                     f"Recording ArgoCD alert: app={app_name}, issue={issue_type}, severity={severity}, first_seen={start_time}, last_seen={end_time}")
                 # Record in the database
-                if issue_type:  # Ensure issue_type is not None
+                if issue_type and start_time:  # Ensure required fields are present
                     record_argocd_alert(app_name, issue_type, severity,
                                         start_time, end_time,
                                         sync_status, health_status)
@@ -119,12 +161,27 @@ def collect_and_store_data():
             for pod in alert.get("pods", []):
                 pod_name = pod.get("name")
                 pod_namespace = pod.get("namespace", "default")
-                start_time = datetime.fromisoformat(
-                    pod.get("start").replace("Z", "+00:00"))
+
+                try:
+                    start_time = datetime.fromisoformat(
+                        pod.get("start").replace("Z", "+00:00"))
+                    start_time = validate_datetime(start_time)
+                    if not start_time:
+                        continue
+                except (ValueError, AttributeError) as e:
+                    logger.warning(
+                        f"Skipping Prometheus alert for {pod_name} due to invalid start time: {e}")
+                    continue
 
                 end_iso = pod.get("end")
-                end_time = None if end_iso is None else datetime.fromisoformat(
-                    end_iso.replace("Z", "+00:00"))
+                try:
+                    end_time = None if end_iso is None else datetime.fromisoformat(
+                        end_iso.replace("Z", "+00:00"))
+                    end_time = validate_datetime(end_time)
+                except ValueError as e:
+                    logger.warning(
+                        f"Invalid end time for {pod_name}, setting to None: {e}")
+                    end_time = None
 
                 # Get the metric value if available
                 metric_value = pod.get("value")
@@ -132,9 +189,13 @@ def collect_and_store_data():
                 logger.debug(
                     f"Recording Prometheus alert: {pod_namespace}/{pod_name}, alert={alert_name}, severity={severity}, first_seen={start_time}, last_seen={end_time}")
                 # Record in the database
-                record_prometheus_alert(pod_namespace, pod_name, alert_name, severity,
-                                        start_time, end_time, metric_value)
-                prom_count += 1
+                if pod_name and start_time:  # Validate required fields
+                    record_prometheus_alert(pod_namespace, pod_name, alert_name, severity,
+                                            start_time, end_time, metric_value)
+                    prom_count += 1
+                else:
+                    logger.warning(
+                        f"Skipping Prometheus alert due to missing required fields: pod_name={pod_name}, start_time={start_time}")
 
         logger.info(f"Recorded {prom_count} Prometheus alerts in the database")
 
