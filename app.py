@@ -3,6 +3,8 @@ import subprocess
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+import openai
+import json
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
 from sqlalchemy import text
@@ -1082,6 +1084,207 @@ def generate_alert_description():
             "description": f"{alert_type}: This alert may indicate a problem with your Kubernetes resources or applications. Check the pod events and logs for more details.",
             "source": "fallback"
         }), 200  # Return 200 instead of 500 to avoid UI errors
+
+@app.route('/api/terminal/analyze', methods=['POST'])
+def terminal_analyze():
+    """
+    Endpoint to analyze pod/event metadata using LLM for the terminal interface
+    """
+    try:
+        # Get request data
+        data = request.json
+        
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        # Extract metadata
+        metadata = data.get('metadata', {})
+        
+        # Use the LLM agent if it's available (from your existing code)
+        if 'llm_agent' in globals():
+            analysis_result = analyze_with_llm_agent(metadata)
+        else:
+            # Fallback to direct OpenAI call
+            analysis_result = analyze_with_openai(metadata)
+            
+        return jsonify(analysis_result)
+    
+    except Exception as e:
+        logger.error(f"Error in terminal analysis: {str(e)}", exc_info=True)
+        return jsonify({
+            "error": str(e),
+            "rootCause": "Analysis failed due to a server error.",
+            "recommendations": [
+                "Try again later",
+                "Check server logs for more details"
+            ]
+        }), 500
+
+def analyze_with_llm_agent(metadata):
+    """
+    Use the existing LLM agent to analyze the metadata
+    """
+    try:
+        # Convert metadata to a format suitable for the LLM agent
+        analysis_metadata = {
+            "namespace": metadata.get("namespace", "unknown"),
+            "pod_name": metadata.get("podName", metadata.get("name", "unknown")),
+            "issue_type": metadata.get("issueType", "unknown"),
+            "severity": metadata.get("severity", "unknown"),
+            "source": metadata.get("source", "kubernetes"),
+            "events": metadata.get("events", []),
+            "raw_describe": metadata.get("rawDescribe", "")
+        }
+        
+        # Use the existing diagnose_pod method from your LLM agent
+        llm_response = llm_agent.diagnose_pod(analysis_metadata)
+        
+        # Parse the response to extract root cause and recommendations
+        root_cause = []
+        recommendations = []
+        
+        if "Root Cause:" in llm_response and "Recommended Actions:" in llm_response:
+            # Split the response
+            root_cause_text = llm_response.split("Root Cause:")[1].split("Recommended Actions:")[0]
+            recommendations_text = llm_response.split("Recommended Actions:")[1]
+            
+            # Process root cause
+            root_cause = root_cause_text.strip()
+            
+            # Process recommendations into a list
+            raw_recommendations = [line.strip() for line in recommendations_text.strip().split("\n") if line.strip()]
+            recommendations = []
+            for rec in raw_recommendations:
+                # Remove bullet points if present
+                clean_rec = rec
+                if rec.startswith("- "):
+                    clean_rec = rec[2:]
+                elif rec.startswith("* "):
+                    clean_rec = rec[2:]
+                elif rec.startswith("• "):
+                    clean_rec = rec[2:]
+                elif rec.startswith("· "):
+                    clean_rec = rec[2:]
+                # Check for numbered list
+                elif rec[0].isdigit() and rec[1:].startswith(". "):
+                    clean_rec = rec[rec.find(" ")+1:]
+                
+                recommendations.append(clean_rec)
+        else:
+            # Fallback if structured format isn't found
+            root_cause = "Analysis could not be structured properly. See full output below."
+            recommendations = [llm_response]
+        
+        return {
+            "rootCause": root_cause,
+            "recommendations": recommendations,
+            "raw_output": llm_response
+        }
+        
+    except Exception as e:
+        logger.error(f"Error analyzing with LLM agent: {str(e)}", exc_info=True)
+        return {
+            "rootCause": "Error during analysis",
+            "recommendations": [f"Error: {str(e)}"],
+            "raw_output": str(e)
+        }
+
+def analyze_with_openai(metadata):
+    """
+    Direct call to OpenAI API for analysis
+    """
+    try:
+        client = openai.OpenAI()  # Uses OPENAI_API_KEY environment variable
+        
+        # Format the issue details for the prompt
+        issue_details = json.dumps(metadata, indent=2)
+        
+        system_prompt = """
+        You are K3R4 (Kubernetes Error Root-cause Analysis), an expert system for diagnosing Kubernetes issues.
+        When presented with metadata about a Kubernetes error or alert, you will:
+        1. Analyze the most likely root causes based on the issue type, namespace, pod name, and any other available information
+        2. Provide clear, actionable recommendations for resolving the issue
+        
+        FORMAT YOUR RESPONSE EXACTLY AS FOLLOWS:
+        - Start with a concise explanation of the root cause(s)
+        - Follow with a numbered list of recommended actions, in order of priority
+        - Be specific and technical, but clear
+        - Focus on practical solutions that a DevOps engineer can implement immediately
+        """
+        
+        user_prompt = f"""
+        Please analyze this Kubernetes issue:
+        
+        {issue_details}
+        
+        Determine the most likely root cause and recommend specific actions to resolve it.
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-4",  # You can switch to a different model if needed
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,  # Lower temperature for more focused, technical responses
+        )
+        
+        analysis_text = response.choices[0].message.content
+        
+        # Try to parse the response into our expected format
+        root_cause = ""
+        recommendations = []
+        
+        # Split by lines and process
+        lines = analysis_text.strip().split('\n')
+        
+        # The first paragraph is likely the root cause
+        root_cause_lines = []
+        i = 0
+        while i < len(lines) and not lines[i].strip().startswith("1."):
+            if lines[i].strip():
+                root_cause_lines.append(lines[i].strip())
+            i += 1
+        
+        root_cause = " ".join(root_cause_lines)
+        
+        # The rest should be numbered recommendations
+        current_rec = ""
+        for j in range(i, len(lines)):
+            line = lines[j].strip()
+            if not line:
+                continue
+            
+            # Check if this is a new numbered item
+            if line[0].isdigit() and line[1:].startswith("."):
+                if current_rec:
+                    recommendations.append(current_rec)
+                current_rec = line[line.find(" ")+1:].strip()
+            else:
+                current_rec += " " + line
+        
+        # Add the last recommendation if it exists
+        if current_rec:
+            recommendations.append(current_rec)
+        
+        # Fallback if we couldn't parse properly
+        if not root_cause:
+            root_cause = "Analysis could not be structured properly. See full output below."
+            recommendations = [analysis_text]
+        
+        return {
+            "rootCause": root_cause,
+            "recommendations": recommendations,
+            "raw_output": analysis_text
+        }
+        
+    except Exception as e:
+        logger.error(f"Error analyzing with OpenAI: {str(e)}", exc_info=True)
+        return {
+            "rootCause": "Error during OpenAI analysis",
+            "recommendations": [f"Error: {str(e)}"],
+            "raw_output": str(e)
+        }
 
 if __name__ == '__main__':
     app.run(debug=True)
