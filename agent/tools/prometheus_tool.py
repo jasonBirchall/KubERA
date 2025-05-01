@@ -127,11 +127,6 @@ class PrometheusTool:
         Returns:
             List of alert objects with timestamps and metadata
         """
-        # If we're not connected to Prometheus, return synthetic data
-        if not self.connected:
-            logger.info(
-                "Not connected to Prometheus, returning synthetic data")
-            return self.generate_synthetic_data()
 
         end_time = datetime.now(timezone.utc)
         start_time = end_time - timedelta(hours=hours)
@@ -225,10 +220,6 @@ class PrometheusTool:
         process_results(failed_data, "PodFailed")
         process_results(pending_data, "PodPending")
 
-        if not issue_groups:
-            logger.warning(
-                "No real issues found in Prometheus. Falling back to synthetic data.")
-            return self.generate_synthetic_data()
 
         return list(issue_groups.values())
 
@@ -253,99 +244,6 @@ class PrometheusTool:
             return "medium"
         else:
             return "low"
-
-    def generate_synthetic_data(self) -> List[Dict[str, Any]]:
-        """
-        Generate synthetic alert data for demonstration purposes.
-
-        Returns:
-            List of synthetic alert objects
-        """
-        logger.info("Generating synthetic data for demonstration")
-        now = datetime.now(timezone.utc)
-
-        # Create some synthetic data with various alert types
-        synthetic_alerts = [
-            {
-                "name": "HighCPUUsage",
-                "severity": "medium",
-                "source": "prometheus",
-                "pods": [
-                    {
-                        "name": "api-server-6d4f8cb9b5-abc12",
-                        "namespace": "default",
-                        "start": (now - timedelta(hours=2)).isoformat(),
-                        "end": (now - timedelta(hours=1, minutes=30)).isoformat(),
-                        "source": "prometheus"
-                    },
-                    {
-                        "name": "worker-7f6b8d95c4-def34",
-                        "namespace": "backend",
-                        "start": (now - timedelta(minutes=45)).isoformat(),
-                        "end": None,  # ongoing
-                        "source": "prometheus"
-                    }
-                ],
-                "count": 2
-            },
-            {
-                "name": "MemoryPressure",
-                "severity": "high",
-                "source": "prometheus",
-                "pods": [
-                    {
-                        "name": "database-primary-0",
-                        "namespace": "database",
-                        "start": (now - timedelta(hours=3)).isoformat(),
-                        "end": (now - timedelta(hours=2, minutes=45)).isoformat(),
-                        "source": "prometheus"
-                    }
-                ],
-                "count": 1
-            },
-            {
-                "name": "SlowHTTPResponses",
-                "severity": "low",
-                "source": "prometheus",
-                "pods": [
-                    {
-                        "name": "frontend-5c7f9b88d7-ghi56",
-                        "namespace": "frontend",
-                        "start": (now - timedelta(hours=1)).isoformat(),
-                        "end": None,  # ongoing
-                        "source": "prometheus"
-                    },
-                    {
-                        "name": "api-gateway-6d5f7cb8a4-jkl78",
-                        "namespace": "api",
-                        "start": (now - timedelta(hours=1, minutes=15)).isoformat(),
-                        "end": (now - timedelta(minutes=30)).isoformat(),
-                        "source": "prometheus"
-                    }
-                ],
-                "count": 2
-            }
-        ]
-
-        # Add a synthetic PodRestarting alert that mimics the real data we'd get
-        if any(pod.startswith("crashloop-") for pod in self.list_pods("default")):
-            synthetic_alerts.append({
-                "name": "PodRestarting",
-                "severity": "medium",
-                "source": "prometheus",
-                "pods": [
-                    {
-                        "name": "crashloop-deploy-ff5588fc-9nnx8",
-                        "namespace": "default",
-                        "start": (now - timedelta(minutes=15)).isoformat(),
-                        "end": None,  # ongoing
-                        "source": "prometheus"
-                    }
-                ],
-                "count": 1
-            })
-
-        return synthetic_alerts
 
     def list_pods(self, namespace=None):
         """Get a list of pod names in the specified namespace or all namespaces if None"""
