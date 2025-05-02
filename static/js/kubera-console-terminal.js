@@ -9,8 +9,6 @@
       this.options = Object.assign({
         height: '300px',
         theme: {
-          background: '#1a1a1a',       // Dark gray background
-          text: '#e6e6e6',             // Light gray text
           prompt: '#f0d780',           // Yellowish prompt
           command: '#f0d780',          // Yellowish command text
           output: '#a0a0a0',           // Medium gray for output
@@ -21,7 +19,7 @@
         },
         fontSize: '14px',
         promptText: '~//kubERA $ ',
-        typeDelay: 15                  // Faster typing for better UX
+        typeDelay: 7                  // Faster typing for better UX
       }, options);
       
       this.lines = [];
@@ -40,7 +38,6 @@
       this.terminalEl.style.fontFamily = 'Consolas, "Courier New", monospace';
       this.terminalEl.style.fontSize = this.options.fontSize;
       this.terminalEl.style.padding = '8px';
-      this.terminalEl.style.height = this.options.height;
       this.terminalEl.style.overflowY = 'auto';
       this.terminalEl.style.marginTop = '10px';
       this.terminalEl.style.border = '1px solid #444';
@@ -308,7 +305,7 @@
             // Create and start the terminal
             const terminal = new ConsoleTerminal(terminalContainer, {
               height: '250px',
-              promptText: 'kubectl> '
+              promptText: 'kubera> '
             });
             
             terminal.analyze(metadata);
@@ -342,7 +339,7 @@
       
       const terminal = new ConsoleTerminal(terminalContainer, {
         height: '250px',
-        promptText: 'kubectl> '
+        promptText: 'kubera> '
       });
       
       terminal.analyze(metadata);
