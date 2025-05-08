@@ -9,7 +9,7 @@ dependencies = [
   "dash>=2.18.2",
   "dash-auth==2.3.0",
   "flask==3.0.0",
-  "gunicorn==21.2.0",
+  "gunicorn==23.0.0",
   "matplotlib>=3.10.1",
   "openai>=1.73.0",
   "pandas>=2.2.3",
