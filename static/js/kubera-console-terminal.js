@@ -25,6 +25,8 @@
       this.lines = [];
       this.isAnalyzing = false;
       this.metadata = null;
+      this.cache = new Map(); // Simple in-memory cache for API responses
+      this.cacheTimeout = 5 * 60 * 1000; // 5 minutes cache timeout
       
       this.init();
     }
@@ -141,115 +143,249 @@
         this.metadata = metadata;
         
         // Show initial command
-        await this.addLine('kubectl describe pod ' + metadata.pod_name, 'command');
+        await this.addLine('kubectl describe pod ' + metadata.pod_name + ' -n ' + metadata.namespace, 'command');
         
-        // Parse and display metadata in a simple kubectl-like format
-        await this.addLine('Name:         ' + metadata.pod_name, 'output', 0);
-        await this.addLine('Namespace:    ' + metadata.namespace, 'output', 0);
-        await this.addLine('Alert Type:   ' + metadata.issue_type, 'output', 0);
-        await this.addLine('Severity:     ' + metadata.severity, 'output', 0);
+        // Show loading animation while fetching real data
+        await this.addLine('Fetching pod details...', 'output', 0);
         
-        // Brief pause before analysis
-        await new Promise(resolve => setTimeout(resolve, 800));
+        // Get real analysis results from the API
+        const results = await this.getRealAnalysisData(metadata);
         
-        // Start analysis with another command
-        await this.addLine('kubera analyze pod ' + metadata.pod_name, 'command');
+        // Clear loading message and show real kubectl-style output
+        this.clearLastLine();
         
-        // Processing message
-        await this.addLine('Analyzing pod issues...', 'output', 0);
-        
-        // Brief pause to simulate work
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        
-        // Get analysis results
-        const results = await this.getAnalysisData(metadata);
-        
-        // Output header
-        await this.addLine('\nROOT CAUSE ANALYSIS', 'header', 0);
-        await this.addLine('----------------', 'header', 0);
-        
-        // Output root cause
-        await this.addLine('ISSUE DETECTED: ' + metadata.issue_type, 'important', 0);
-        await this.addLine(results.rootCause, 'output', 0);
-        
-        // Output recommendations
-        await this.addLine('\nRECOMMENDED ACTIONS:', 'header', 0);
-        await this.addLine('-------------------', 'header', 0);
-        
-        for (let i = 0; i < results.recommendations.length; i++) {
-          await this.addLine(`${i+1}. ${results.recommendations[i]}`, 'output', 0);
+        // Display basic pod info from real metadata
+        if (results.metadata) {
+          await this.addLine('Name:         ' + results.metadata.pod_name, 'output', 0);
+          await this.addLine('Namespace:    ' + results.metadata.namespace, 'output', 0);
+          await this.addLine('Containers:   ' + results.metadata.containers.length, 'output', 0);
+          await this.addLine('Events:       ' + results.metadata.events_count + ' recent events', 'output', 0);
         }
         
-        // Completion message
-        await this.addLine('\nAnalysis complete.', 'success', 0);
-        await this.addLine(this.options.promptText, 'command', 0);
+        // Brief pause before analysis
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Start AI analysis
+        await this.addLine('\nkubera analyze pod ' + metadata.pod_name, 'command');
+        await this.addLine('🤖 Analyzing with AI...', 'output', 0);
+        
+        // Brief pause to show AI is working
+        await new Promise(resolve => setTimeout(resolve, 800));
+        
+        // Clear AI message and show results
+        this.clearLastLine();
+        
+        // Add separator line for visual clarity
+        await this.addLine('─'.repeat(60), 'separator', 0);
+        
+        // Output root cause analysis with enhanced formatting
+        await this.addLine('\n🔍 ROOT CAUSE ANALYSIS', 'analysis-header', 0);
+        await this.addLine('─'.repeat(25), 'separator', 0);
+        
+        // Format root cause with better line breaks
+        const rootCauseText = results.rootCause || 'Unable to determine root cause';
+        const rootCauseLines = this.wrapText(rootCauseText, 80);
+        for (const line of rootCauseLines) {
+          await this.addLine(line, 'analysis-content', 0);
+        }
+        
+        // Output recommendations with enhanced formatting
+        await this.addLine('\n🛠️  RECOMMENDED ACTIONS', 'analysis-header', 0);
+        await this.addLine('─'.repeat(25), 'separator', 0);
+        
+        if (results.recommendations && results.recommendations.length > 0) {
+          for (let i = 0; i < results.recommendations.length; i++) {
+            const recommendation = results.recommendations[i];
+            await this.addLine(`\n${i+1}. ${recommendation}`, 'recommendation', 0);
+            
+            // Add subtle spacing between recommendations
+            if (i < results.recommendations.length - 1) {
+              await this.addLine('', 'output', 0);
+            }
+          }
+        } else {
+          await this.addLine('No specific recommendations available', 'analysis-content', 0);
+        }
+        
+        // Show kubectl commands if available with copy functionality
+        if (results.kubectl_commands) {
+          await this.addLine('\n⚡ KUBECTL COMMANDS TO RUN', 'analysis-header', 0);
+          await this.addLine('─'.repeat(30), 'separator', 0);
+          
+          const commands = results.kubectl_commands.split('\n');
+          for (const cmd of commands) {
+            if (cmd.trim()) {
+              await this.addCommandWithCopy(cmd.trim());
+            }
+          }
+        }
+        
+        // Enhanced completion message with summary
+        await this.addLine('\n' + '─'.repeat(60), 'separator', 0);
+        await this.addLine('✅ AI-powered analysis complete', 'success', 0);
+        
+        // Add performance metrics if available
+        if (results.metadata) {
+          const analysisTime = new Date(results.metadata.timestamp);
+          await this.addLine(`📊 Analysis completed at ${analysisTime.toLocaleTimeString()}`, 'metadata-info', 0);
+        }
+        
+        await this.addLine('\n' + this.options.promptText, 'command', 0);
         
       } catch (error) {
-        await this.addLine('Error during analysis: ' + error.message, 'error', 0);
+        console.error('Analysis error:', error);
+        await this.addLine('\n❌ Error during analysis: ' + error.message, 'error', 0);
+        await this.addLine('Falling back to basic troubleshooting...', 'output', 0);
+        
+        // Provide basic fallback recommendations
+        await this.addLine('\nBasic troubleshooting steps:', 'header', 0);
+        await this.addLine('1. Check pod logs: kubectl logs ' + metadata.pod_name + ' -n ' + metadata.namespace, 'output', 0);
+        await this.addLine('2. Check pod events: kubectl describe pod ' + metadata.pod_name + ' -n ' + metadata.namespace, 'output', 0);
+        await this.addLine('3. Check pod status: kubectl get pod ' + metadata.pod_name + ' -n ' + metadata.namespace + ' -o yaml', 'output', 0);
+        
       } finally {
         this.isAnalyzing = false;
         this.scrollToBottom();
       }
     }
     
-    getAnalysisData(metadata) {
-      // This would be replaced with a real API call in production
-      return new Promise(resolve => {
+    async getRealAnalysisData(metadata) {
+      // Create cache key based on namespace and pod name
+      const cacheKey = `${metadata.namespace}:${metadata.pod_name}`;
+      
+      // Check cache first
+      const cachedResult = this.cache.get(cacheKey);
+      if (cachedResult && (Date.now() - cachedResult.timestamp) < this.cacheTimeout) {
+        console.log('Using cached analysis result');
+        return cachedResult.data;
+      }
+      
+      // Make real API call to the pod diagnosis endpoint
+      try {
+        const namespace = metadata.namespace;
+        const podName = metadata.pod_name;
+        
+        const response = await fetch(`/api/pod-diagnosis/${namespace}/${podName}`);
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        // Cache the successful result
+        this.cache.set(cacheKey, {
+          data: data,
+          timestamp: Date.now()
+        });
+        
+        // Clean up old cache entries
+        this.cleanupCache();
+        
+        return data;
+        
+      } catch (error) {
+        console.error('API call failed:', error);
+        throw new Error(`Failed to get AI analysis: ${error.message}`);
+      }
+    }
+    
+    cleanupCache() {
+      // Remove entries older than cache timeout
+      const now = Date.now();
+      for (const [key, value] of this.cache.entries()) {
+        if (now - value.timestamp > this.cacheTimeout) {
+          this.cache.delete(key);
+        }
+      }
+    }
+    
+    clearLastLine() {
+      // Helper method to remove the last line (useful for clearing loading messages)
+      const lines = this.outputEl.querySelectorAll('.line');
+      if (lines.length > 0) {
+        const lastLine = lines[lines.length - 1];
+        lastLine.remove();
+      }
+    }
+    
+    wrapText(text, maxLength) {
+      // Helper method to wrap long text into multiple lines
+      const words = text.split(' ');
+      const lines = [];
+      let currentLine = '';
+      
+      for (const word of words) {
+        if ((currentLine + word).length <= maxLength) {
+          currentLine += (currentLine ? ' ' : '') + word;
+        } else {
+          if (currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+          } else {
+            // Word is longer than maxLength, just add it
+            lines.push(word);
+          }
+        }
+      }
+      
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+      
+      return lines;
+    }
+    
+    async addCommandWithCopy(command) {
+      // Add a command line with copy-to-clipboard functionality
+      const line = document.createElement('div');
+      line.className = 'line command-with-copy';
+      
+      const commandText = document.createElement('span');
+      commandText.className = 'command-text';
+      commandText.textContent = '$ ' + command;
+      
+      const copyButton = document.createElement('button');
+      copyButton.className = 'copy-button';
+      copyButton.innerHTML = '📋';
+      copyButton.title = 'Copy to clipboard';
+      copyButton.onclick = () => this.copyToClipboard(command, copyButton);
+      
+      line.appendChild(commandText);
+      line.appendChild(copyButton);
+      
+      this.outputEl.appendChild(line);
+      this.scrollToBottom();
+      
+      // Small delay for visual effect
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    async copyToClipboard(text, button) {
+      try {
+        await navigator.clipboard.writeText(text);
+        const originalText = button.innerHTML;
+        button.innerHTML = '✅';
+        button.title = 'Copied!';
+        
         setTimeout(() => {
-          // Mock responses based on issue type
-          const responses = {
-            'CrashLoopBackOff': {
-              rootCause: 'The pod is repeatedly crashing immediately after startup. This is typically caused by application errors, misconfiguration, or issues with dependent services.',
-              recommendations: [
-                'Check application logs with: kubectl logs ' + metadata.pod_name + ' -n ' + metadata.namespace,
-                'Verify environment variables and configuration',
-                'Check if required services are accessible from the pod',
-                'Examine the liveness probe configuration, it may be failing too quickly'
-              ]
-            },
-            'PodOOMKilled': {
-              rootCause: 'The container was terminated because it exceeded its memory limits (Out Of Memory). The application is using more memory than allocated.',
-              recommendations: [
-                'Increase memory limits in pod specification',
-                'Check for memory leaks in the application',
-                'Review recent changes that might have increased memory usage',
-                'Consider implementing horizontal pod autoscaling'
-              ]
-            },
-            'ImagePullError': {
-              rootCause: 'Kubernetes cannot pull the specified container image. This may be due to incorrect image name, missing credentials, or network issues.',
-              recommendations: [
-                'Verify image name and tag are correct in deployment spec',
-                'Check if the image exists in the repository',
-                'Ensure pull secrets are correctly configured',
-                'Verify network connectivity to the image registry'
-              ]
-            },
-            'FailedScheduling': {
-              rootCause: 'The Kubernetes scheduler cannot find a suitable node to place the pod. This might be due to insufficient resources or node constraints.',
-              recommendations: [
-                'Check node resources with: kubectl describe nodes',
-                'Review resource requests and limits in the pod spec',
-                'Check for node taints that might be preventing scheduling',
-                'Verify node affinity/anti-affinity rules if configured'
-              ]
-            },
-            'default': {
-              rootCause: 'Multiple potential causes for this issue were identified, requiring further investigation.',
-              recommendations: [
-                'Examine pod events: kubectl describe pod ' + metadata.pod_name + ' -n ' + metadata.namespace,
-                'Check pod logs: kubectl logs ' + metadata.pod_name + ' -n ' + metadata.namespace,
-                'Verify resource requirements are properly set',
-                'Check network policies and service dependencies'
-              ]
-            }
-          };
-          
-          // Select response based on issue type or use default
-          const issueType = metadata.issue_type;
-          resolve(responses[issueType] || responses.default);
+          button.innerHTML = originalText;
+          button.title = 'Copy to clipboard';
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy text: ', err);
+        button.innerHTML = '❌';
+        setTimeout(() => {
+          button.innerHTML = '📋';
         }, 1000);
-      });
+      }
+    }
+    
+    // Legacy method - kept for backwards compatibility
+    getAnalysisData(metadata) {
+      // Redirect to real analysis
+      return this.getRealAnalysisData(metadata);
     }
   }
   
