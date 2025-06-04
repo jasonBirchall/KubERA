@@ -974,6 +974,120 @@ body {
   margin-left: 44px;
 }
 
+/* Terminal and Console Styles */
+.command-suggestion {
+  color: #4fc3f7 !important;
+  background-color: rgba(79, 195, 247, 0.1);
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-family: 'Courier New', monospace;
+  border-left: 2px solid #4fc3f7;
+  margin: 1px 0;
+}
+
+.line.command {
+  color: #81c784;
+  font-weight: 500;
+}
+
+.line.output {
+  color: #d8d9da;
+}
+
+.line.header {
+  color: #ffb74d;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.line.success {
+  color: #81c784;
+  font-weight: 500;
+}
+
+.line.error {
+  color: #ff8a80;
+  font-weight: 500;
+}
+
+.line.important {
+  color: #f06292;
+  font-weight: 600;
+}
+
+.line.separator {
+  color: #4a4a5a;
+  font-family: 'Courier New', monospace;
+  margin: 2px 0;
+}
+
+.line.analysis-header {
+  color: #64b5f6;
+  font-weight: 700;
+  font-size: 14px;
+  margin: 8px 0 4px 0;
+}
+
+.line.analysis-content {
+  color: #e0e0e0;
+  line-height: 1.4;
+  margin: 2px 0;
+  padding-left: 8px;
+}
+
+.line.recommendation {
+  color: #a5d6a7;
+  font-weight: 500;
+  line-height: 1.3;
+  margin: 4px 0;
+  padding-left: 4px;
+}
+
+.line.metadata-info {
+  color: #90a4ae;
+  font-size: 12px;
+  font-style: italic;
+  margin: 4px 0;
+}
+
+.line.command-with-copy {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: rgba(79, 195, 247, 0.05);
+  padding: 6px 8px;
+  border-radius: 4px;
+  border-left: 3px solid #4fc3f7;
+  margin: 4px 0;
+  font-family: 'Courier New', monospace;
+}
+
+.command-text {
+  color: #4fc3f7;
+  font-weight: 500;
+  flex-grow: 1;
+}
+
+.copy-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: background-color 0.2s;
+  margin-left: 8px;
+}
+
+.copy-button:hover {
+  background-color: rgba(79, 195, 247, 0.2);
+}
+
+.copy-button:active {
+  transform: scale(0.95);
+}
+
 /* Make table rows in analysis panel visibly clickable */
 .clickable-row {
   cursor: pointer;

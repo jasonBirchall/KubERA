@@ -1120,6 +1120,137 @@ def terminal_analyze():
             ]
         }), 500
 
+@app.route('/api/pod-diagnosis/<namespace>/<pod_name>')
+def diagnose_pod_failure(namespace, pod_name):
+    """
+    Diagnose a specific pod failure using real kubectl data and LLM analysis.
+    Returns structured diagnosis with root cause analysis and recommendations.
+    """
+    try:
+        # Gather real metadata using k8s_tool
+        metadata = k8s_tool.gather_metadata(namespace, pod_name)
+        
+        if not metadata or not metadata.get('raw_describe'):
+            return jsonify({
+                "error": f"Pod '{pod_name}' not found in namespace '{namespace}' or unable to gather metadata",
+                "rootCause": "Pod not found or kubectl access issue",
+                "recommendations": [
+                    f"Verify pod '{pod_name}' exists in namespace '{namespace}'",
+                    "Check kubectl connectivity and permissions",
+                    "Try: kubectl get pods -n " + namespace
+                ]
+            }), 404
+        
+        # Use the enhanced LLM agent for diagnosis
+        analysis_result = llm_agent.diagnose_pod_failure(metadata)
+        
+        # Parse the structured response from LLM
+        parsed_result = parse_llm_diagnosis(analysis_result)
+        
+        # Add metadata for frontend
+        parsed_result['metadata'] = {
+            'namespace': namespace,
+            'pod_name': pod_name,
+            'timestamp': datetime.now().isoformat(),
+            'containers': metadata.get('containers', []),
+            'events_count': len(metadata.get('events', []))
+        }
+        
+        return jsonify(parsed_result)
+        
+    except subprocess.CalledProcessError as e:
+        logger.error(f"kubectl error for pod {pod_name} in {namespace}: {str(e)}")
+        return jsonify({
+            "error": "Kubernetes API error",
+            "rootCause": "Unable to access Kubernetes cluster",
+            "recommendations": [
+                "Check kubectl configuration and cluster connectivity",
+                "Verify you have permissions to access the namespace",
+                "Try: kubectl cluster-info"
+            ]
+        }), 503
+        
+    except Exception as e:
+        logger.error(f"Error diagnosing pod {pod_name} in {namespace}: {str(e)}", exc_info=True)
+        return jsonify({
+            "error": "Internal server error during diagnosis",
+            "rootCause": "Server error during analysis",
+            "recommendations": [
+                "Try again in a few moments",
+                "Check server logs for more details",
+                "Contact support if the issue persists"
+            ]
+        }), 500
+
+def parse_llm_diagnosis(llm_response):
+    """
+    Parse the structured LLM response into JSON format for frontend consumption.
+    Expected format from LLM:
+    === ROOT CAUSE ANALYSIS ===
+    [explanation]
+    
+    === RECOMMENDED ACTIONS ===
+    1. [action]
+    2. [action]
+    
+    === KUBECTL COMMANDS TO RUN ===
+    [commands]
+    """
+    try:
+        sections = llm_response.split('===')
+        
+        root_cause = ""
+        recommendations = []
+        kubectl_commands = ""
+        
+        for i, section in enumerate(sections):
+            section = section.strip()
+            if 'ROOT CAUSE ANALYSIS' in section:
+                # Get the next section's content
+                if i + 1 < len(sections):
+                    root_cause = sections[i + 1].strip()
+            elif 'RECOMMENDED ACTIONS' in section:
+                if i + 1 < len(sections):
+                    actions_text = sections[i + 1].strip()
+                    # Parse numbered actions
+                    for line in actions_text.split('\n'):
+                        line = line.strip()
+                        if line and (line[0].isdigit() or line.startswith('-') or line.startswith('*')):
+                            # Clean up numbering and bullet points
+                            clean_line = line
+                            if line[0].isdigit() and '. ' in line:
+                                clean_line = line[line.find('. ') + 2:]
+                            elif line.startswith('- '):
+                                clean_line = line[2:]
+                            elif line.startswith('* '):
+                                clean_line = line[2:]
+                            recommendations.append(clean_line)
+            elif 'KUBECTL COMMANDS' in section:
+                if i + 1 < len(sections):
+                    kubectl_commands = sections[i + 1].strip()
+        
+        # Fallback parsing if structured format isn't found
+        if not root_cause and not recommendations:
+            lines = llm_response.split('\n')
+            root_cause = "Analysis provided below"
+            recommendations = [line.strip() for line in lines if line.strip()]
+            
+        return {
+            "rootCause": root_cause or "Unable to determine root cause",
+            "recommendations": recommendations or ["Check the full analysis output"],
+            "kubectl_commands": kubectl_commands,
+            "raw_output": llm_response
+        }
+        
+    except Exception as e:
+        logger.error(f"Error parsing LLM diagnosis: {str(e)}")
+        return {
+            "rootCause": "Unable to parse diagnosis",
+            "recommendations": ["See raw output for full analysis"],
+            "kubectl_commands": "",
+            "raw_output": llm_response
+        }
+
 def analyze_with_llm_agent(metadata):
     """
     Use the existing LLM agent to analyze the metadata
