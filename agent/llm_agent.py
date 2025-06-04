@@ -67,74 +67,91 @@ class LlmAgent:
         )
         return response.choices[0].message.content
 
-    def diagnose_pod(self, metadata: dict):
+    def diagnose_pod_failure(self, metadata: dict):
         """
-        Given a dictionary 'metadata' which might include:
-        - "containers": [
-            {
-                "name": str,
-                "image": str,
-                "image_valid": bool,    # if you do Docker checks
-                "env": [ { "name": ..., "value": ... }, ... ]
-            },
-            ...
+        Diagnose Kubernetes pod failures using metadata from k8s_tool.gather_metadata().
+        
+        Expected metadata structure:
+        {
+            "namespace": str,
+            "pod_name": str,
+            "raw_describe": str,   # Full kubectl describe pod output
+            "events": [str, ...],  # Extracted event lines from kubectl describe
+            "containers": [        # Container status info from kubectl get pod -o json
+                {
+                    "name": str,
+                    "image": str,
+                    "waitingReason": str,      # e.g., "CrashLoopBackOff", "ErrImagePull"
+                    "terminatedReason": str    # e.g., "OOMKilled", "Error"
+                }, ...
             ]
-        - "events": [str, ...]
-        - "raw_describe": str
-        - Possibly other fields you add
-
-        We pass it all to the LLM. A single conversation:
-        1) System message: "Here's how to interpret each field..."
-        2) Assistant message: "Here is the metadata: ... (the JSON dump)."
-        3) User message: "Given this data, what's the likely root cause & fix?"
-
-        The LLM can handle many potential issues (image invalid, environment problems, CrashLoopBackOff, etc.)
+        }
+        
+        Returns a structured diagnosis with root cause analysis and recommendations.
         """
-
-        # 1) Summarise or define the meaning of each field for the LLM in the system prompt
-        #    This ensures it knows how to interpret, e.g. "image_valid: false => the image might be missing."
         system_prompt = (
-            "You are an AI diagnosing K8s pods. We have some metadata fields:\n"
-            "- 'containers': a list of containers in this pod.\n"
-            "   Each container can have:\n"
-            "      name: container name.\n"
-            "      image: the Docker image string.\n"
-            "      image_valid: a boolean we derived from checking if the image exists in a registry.\n"
-            "         (true means we verified the image can be pulled, false means it's likely invalid or private.)\n"
-            "      env: environment variables in that container.\n"
-            "- 'events': lines from 'kubectl describe' that show warnings or error messages.\n"
-            "- 'raw_describe': the entire text from 'kubectl describe pod'.\n"
-            "If 'image_valid' is false, it might indicate an invalid or non-existent container image.\n"
-            "If 'events' mention CrashLoopBackOff, or ErrImagePull, that's also relevant.\n"
-            "Use these clues to figure out potential root causes.\n"
-            "Finally, propose recommended fixes or next steps.\n"
+            "You are a Kubernetes expert diagnosing pod failures. You will receive metadata about a failing pod including:\n"
+            "\n"
+            "- 'namespace' & 'pod_name': Basic pod identification\n"
+            "- 'raw_describe': Complete output from 'kubectl describe pod' command\n"
+            "- 'events': Extracted event messages showing warnings/errors from the Events section\n"
+            "- 'containers': Array of container status information with:\n"
+            "    - 'name': Container name\n"
+            "    - 'image': Docker image being used\n"
+            "    - 'waitingReason': Why container is waiting (CrashLoopBackOff, ErrImagePull, ImagePullBackOff, etc.)\n"
+            "    - 'terminatedReason': Why container terminated (OOMKilled, Error, etc.)\n"
+            "\n"
+            "Common Kubernetes failure patterns:\n"
+            "- CrashLoopBackOff: Container keeps crashing, usually due to application errors, missing dependencies, or configuration issues\n"
+            "- ErrImagePull/ImagePullBackOff: Cannot pull the specified Docker image (wrong tag, private registry, network issues)\n"
+            "- OOMKilled: Container exceeded memory limits and was killed by the kernel\n"
+            "- FailedScheduling: Pod cannot be scheduled due to resource constraints or node affinity issues\n"
+            "- Liveness/Readiness probe failures: Health checks are failing\n"
+            "\n"
+            "Analyze the provided data and respond in this format:\n"
+            "=== ROOT CAUSE ANALYSIS ===\n"
+            "[Detailed explanation of what's wrong]\n"
+            "\n"
+            "=== RECOMMENDED ACTIONS ===\n"
+            "1. [Immediate action]\n"
+            "2. [Follow-up action]\n"
+            "3. [Prevention measures]\n"
+            "\n"
+            "=== KUBECTL COMMANDS TO RUN ===\n"
+            "[Specific kubectl commands for debugging/fixing]\n"
+            "\n"
+            "Be specific and actionable. Focus on the most likely cause based on the container states and events."
         )
 
-        # 2) Turn your metadata into a JSON string. That can be 'assistant' role,
-        #    so the LLM sees it as data it can parse or read.
         metadata_json = json.dumps(metadata, indent=2)
 
-        # 3) We'll define a user prompt that instructs the LLM to provide a diagnosis
         user_prompt = (
-            "Given the above metadata, please diagnose the likely cause(s) of any issues. "
-            "Propose how to fix them or what next steps to take. If everything looks fine, say so."
+            "Analyze this Kubernetes pod failure and provide a comprehensive diagnosis. "
+            "Focus on the container states (waitingReason, terminatedReason) and events to determine "
+            "the root cause. Provide specific, actionable recommendations."
         )
 
-        # Build the conversation
         messages = [
             {"role": "system", "content": system_prompt},
             {
-                "role": "assistant",
-                "content": f"Here is the metadata:\n{metadata_json}"
+                "role": "assistant", 
+                "content": f"Here is the pod failure metadata:\n```json\n{metadata_json}\n```"
             },
             {"role": "user", "content": user_prompt}
         ]
+
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
-            temperature=0.7,
+            temperature=0.3,  # Lower temperature for more consistent technical analysis
         )
         return response.choices[0].message.content
+
+    def diagnose_pod(self, metadata: dict):
+        """
+        Legacy method - redirects to diagnose_pod_failure for backwards compatibility
+        """
+        return self.diagnose_pod_failure(metadata)
 
     def generate_text(self, prompt, system_message=None):
         """
@@ -160,7 +177,5 @@ class LlmAgent:
             messages=messages,
             temperature=0.7,
         )
-
-        return response.choices[0].message.content
 
         return response.choices[0].message.content
