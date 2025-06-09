@@ -9,7 +9,45 @@ KUBE_PORT := 80
 DASHBOARD_PORT := 8501
 DASHBOARD_CONTAINER := 0.0.1
 
-.PHONY: cluster-up cluster-down demo-app-up demo-app-expose up dashboard dashboard-build dashboard-docker db-reset
+.PHONY: cluster-up cluster-down demo-app-up demo-app-expose up dashboard dashboard-build dashboard-docker db-reset playground check-dependencies run help
+
+## Show help information
+help:
+	@echo "🎯 KubERA - Kubernetes Error Root-cause Analysis"
+	@echo ""
+	@echo "🚀 Quick Start:"
+	@echo "  make playground          Set up complete testing environment"
+	@echo "  make run                 Start the KubERA application"
+	@echo ""
+	@echo "🔧 Environment Management:"
+	@echo "  make check-dependencies  Check and install required tools"
+	@echo "  make cluster-up          Create kind cluster with registry"
+	@echo "  make cluster-down        Delete the kind cluster"
+	@echo "  make destroy-all         Clean up everything"
+	@echo ""
+	@echo "📊 Component Installation:"
+	@echo "  make install-prometheus  Install Prometheus monitoring"
+	@echo "  make install-argocd      Install ArgoCD (simplified)"
+	@echo "  make install-argocd-full Install ArgoCD (full official)"
+	@echo ""
+	@echo "🧪 Testing & Demo:"
+	@echo "  make demo-app-up         Deploy demo applications"
+	@echo "  make create-many-failures Create test failing pods"
+	@echo "  make create-demo-apps    Create ArgoCD demo applications"
+	@echo ""
+	@echo "🗄️  Database Management:"
+	@echo "  make reset-db            Reset KubERA database"
+	@echo "  make cleanup-db          Clean up old database entries"
+	@echo ""
+	@echo "🔗 Port Forwarding:"
+	@echo "  make prometheus-port-forward  Forward Prometheus to localhost:9090"
+	@echo "  make argocd-port-forward      Forward ArgoCD to localhost:8080"
+	@echo ""
+	@echo "📚 Documentation:"
+	@echo "  See PLAYGROUND.md for detailed setup guide"
+	@echo "  See README.md for complete documentation"
+	@echo ""
+	@echo "💡 Tip: Set OPENAI_API_KEY environment variable before starting"
 
 ## Check if OPENAI_API_KEY is set
 check-api-key:
@@ -17,6 +55,156 @@ check-api-key:
 		echo "OPENAI_API_KEY environment variable is not set. Please set it before running."; \
 		exit 1; \
 	fi
+
+## Check and install all required dependencies
+check-dependencies:
+	@echo "🔍 Checking required dependencies..."
+	@echo ""
+	@# Check for Homebrew
+	@if ! command -v brew >/dev/null 2>&1; then \
+		echo "❌ Homebrew is not installed."; \
+		echo "📥 Please install Homebrew from https://brew.sh/"; \
+		echo "   Run: /bin/bash -c \"\$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""; \
+		exit 1; \
+	else \
+		echo "✅ Homebrew is installed"; \
+	fi
+	@# Check for kind
+	@if ! command -v kind >/dev/null 2>&1; then \
+		echo "❌ kind (Kubernetes in Docker) is not installed."; \
+		echo "📥 Installing kind via Homebrew..."; \
+		brew install kind; \
+		echo "✅ kind installed successfully"; \
+	else \
+		echo "✅ kind is installed (version: $$(kind version 2>/dev/null | head -1))"; \
+	fi
+	@# Check for kubectl
+	@if ! command -v kubectl >/dev/null 2>&1; then \
+		echo "❌ kubectl is not installed."; \
+		echo "📥 Installing kubectl via Homebrew..."; \
+		brew install kubectl; \
+		echo "✅ kubectl installed successfully"; \
+	else \
+		echo "✅ kubectl is installed (version: $$(kubectl version --client --short 2>/dev/null || echo "version check failed"))"; \
+	fi
+	@# Check for Docker
+	@if ! command -v docker >/dev/null 2>&1; then \
+		echo "❌ Docker is not installed."; \
+		echo "📥 Please install Docker Desktop from https://docs.docker.com/desktop/"; \
+		echo "   Or install via Homebrew: brew install --cask docker"; \
+		exit 1; \
+	else \
+		echo "✅ Docker is installed"; \
+	fi
+	@# Check if Docker daemon is running
+	@if ! docker info >/dev/null 2>&1; then \
+		echo "❌ Docker daemon is not running."; \
+		echo "🔧 Please start Docker Desktop or the Docker daemon"; \
+		exit 1; \
+	else \
+		echo "✅ Docker daemon is running"; \
+	fi
+	@# Check for uv (Python package manager)
+	@if ! command -v uv >/dev/null 2>&1; then \
+		echo "❌ uv (Python package manager) is not installed."; \
+		echo "📥 Installing uv via Homebrew..."; \
+		brew install uv; \
+		echo "✅ uv installed successfully"; \
+	else \
+		echo "✅ uv is installed (version: $$(uv --version 2>/dev/null || echo "version check failed"))"; \
+	fi
+	@echo ""
+	@echo "🎉 All dependencies are installed and ready!"
+
+## Set up complete playground environment for testing KubERA
+playground: check-api-key check-dependencies
+	@echo "🏗️  Setting up KubERA playground environment..."
+	@echo "This will create a complete testing environment with:"
+	@echo "  • kind Kubernetes cluster"
+	@echo "  • Prometheus monitoring"
+	@echo "  • ArgoCD for GitOps"
+	@echo "  • Sample broken pods for testing"
+	@echo "  • KubERA database and application"
+	@echo ""
+	@# Clean up any existing environment
+	@echo "🧹 Cleaning up any existing environment..."
+	@$(MAKE) destroy-all 2>/dev/null || true
+	@echo ""
+	@# Reset and prepare database
+	@echo "🗄️  Preparing KubERA database..."
+	@$(MAKE) reset-db
+	@echo ""
+	@# Set up the cluster
+	@echo "🔧 Creating kind cluster with local registry..."
+	@$(MAKE) cluster-up
+	@echo ""
+	@# Wait for cluster to be ready
+	@echo "⏳ Waiting for cluster to be ready..."
+	@kubectl wait --for=condition=Ready nodes --all --timeout=60s
+	@echo ""
+	@# Install Prometheus
+	@echo "📊 Installing Prometheus monitoring..."
+	@$(MAKE) install-prometheus
+	@echo ""
+	@# Wait for Prometheus to be ready
+	@echo "⏳ Waiting for Prometheus to start..."
+	@kubectl wait --for=condition=available --timeout=120s deployment/prometheus-deployment -n monitoring || true
+	@echo ""
+	@# Install ArgoCD
+	@echo "🔄 Installing ArgoCD..."
+	@$(MAKE) install-argocd-core
+	@$(MAKE) wait-for-argocd
+	@$(MAKE) install-argocd-apps
+	@echo ""
+	@# Create demo applications and broken pods
+	@echo "🚀 Creating demo applications..."
+	@$(MAKE) demo-app-up
+	@$(MAKE) create-many-failures
+	@$(MAKE) create-demo-apps 2>/dev/null || true
+	@echo ""
+	@# Generate some test data
+	@echo "📈 Generating test data for Prometheus..."
+	@sleep 10  # Let pods start and generate some events
+	@echo ""
+	@# Final setup
+	@echo "🏁 Finishing setup..."
+	@sleep 5
+	@echo ""
+	@echo "================================================="
+	@echo "🎉 KubERA Playground is ready!"
+	@echo "================================================="
+	@echo ""
+	@echo "🌐 Access URLs:"
+	@echo "  KubERA Dashboard:           http://localhost:$(DASHBOARD_PORT)"
+	@echo "  Prometheus:                 http://localhost:9090"
+	@echo "  ArgoCD:                     http://localhost:8080"
+	@echo ""
+	@echo "🔑 ArgoCD Credentials:"
+	@echo "  Username: admin"
+	@echo "  Password: Run this command to get it:"
+	@echo "    kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath=\"{.data.password}\" | base64 -d && echo"
+	@echo ""
+	@echo "🚀 To start the KubERA application:"
+	@echo "  make run"
+	@echo ""
+	@echo "🔧 Useful commands:"
+	@echo "  Port forward Prometheus: make prometheus-port-forward"
+	@echo "  Port forward ArgoCD:     make argocd-port-forward"
+	@echo "  Check cluster status:    kubectl get pods -A"
+	@echo "  Clean everything:        make destroy-all"
+	@echo ""
+	@echo "📚 What's running:"
+	@kubectl get pods -A | head -20
+	@echo ""
+	@echo "Happy testing! 🎯"
+
+## Start the KubERA application
+run: check-api-key
+	@echo "🚀 Starting KubERA application..."
+	@echo "Access the dashboard at: http://localhost:$(DASHBOARD_PORT)"
+	@echo "Press Ctrl+C to stop"
+	@echo ""
+	uv run python app.py
 
 ## Set up the local registry and kind cluster
 cluster-up:
