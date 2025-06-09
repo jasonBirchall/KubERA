@@ -122,6 +122,17 @@
         case 'success':
           line.style.color = this.options.theme.success;
           break;
+        case 'privacy-info':
+          line.style.color = '#ff9800';  // Orange for privacy notices
+          line.style.fontSize = '13px';
+          break;
+        case 'analysis-header':
+          line.style.color = this.options.theme.header;
+          line.style.fontWeight = 'bold';
+          break;
+        case 'separator':
+          line.style.color = '#444';
+          break;
         case 'raw':
           // No special styling for raw output
           break;
@@ -237,6 +248,22 @@
         if (results.metadata) {
           const analysisTime = new Date(results.metadata.timestamp);
           await this.addLine(`📊 Analysis completed at ${analysisTime.toLocaleTimeString()}`, 'metadata-info', 0);
+        }
+        
+        // Show privacy notice if anonymization was used
+        if (results.raw_output && results.raw_output.includes('=== PRIVACY NOTICE ===')) {
+          const privacyNoticeStart = results.raw_output.indexOf('=== PRIVACY NOTICE ===');
+          const privacyNotice = results.raw_output.substring(privacyNoticeStart);
+          
+          await this.addLine('\n🔒 PRIVACY & ANONYMIZATION', 'analysis-header', 0);
+          await this.addLine('─'.repeat(30), 'separator', 0);
+          
+          const privacyLines = privacyNotice.split('\n').slice(1); // Skip the header
+          for (const line of privacyLines) {
+            if (line.trim()) {
+              await this.addLine(line.trim(), 'privacy-info', 0);
+            }
+          }
         }
         
         await this.addLine('\n' + this.options.promptText, 'command', 0);

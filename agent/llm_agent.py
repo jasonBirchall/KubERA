@@ -1,12 +1,18 @@
 import json
+import logging
 
 from openai import OpenAI
+from .data_anonymizer import DataAnonymizer
+
+logger = logging.getLogger(__name__)
 
 
 class LlmAgent:
-    def __init__(self, model="gpt-4"):
+    def __init__(self, model="gpt-4", enable_anonymization=True):
         self.client = OpenAI()
         self.model = model
+        self.enable_anonymization = enable_anonymization
+        self.anonymizer = DataAnonymizer() if enable_anonymization else None
 
     def diagnose_argocd_app(self, metadata: dict):
         """
@@ -89,6 +95,16 @@ class LlmAgent:
         
         Returns a structured diagnosis with root cause analysis and recommendations.
         """
+        # Handle anonymization if enabled
+        session_map = {}
+        processed_metadata = metadata
+        anonymization_info = ""
+        
+        if self.enable_anonymization and self.anonymizer:
+            processed_metadata, session_map = self.anonymizer.anonymize_data(metadata)
+            anonymization_info = self.anonymizer.get_anonymization_summary(session_map)
+            logger.info(f"Anonymized data for OpenAI API call: {len(session_map)} items")
+        
         system_prompt = (
             "You are a Kubernetes expert diagnosing pod failures. You will receive metadata about a failing pod including:\n"
             "\n"
@@ -123,7 +139,7 @@ class LlmAgent:
             "Be specific and actionable. Focus on the most likely cause based on the container states and events."
         )
 
-        metadata_json = json.dumps(metadata, indent=2)
+        metadata_json = json.dumps(processed_metadata, indent=2)
 
         user_prompt = (
             "Analyze this Kubernetes pod failure and provide a comprehensive diagnosis. "
@@ -145,7 +161,17 @@ class LlmAgent:
             messages=messages,
             temperature=0.3,  # Lower temperature for more consistent technical analysis
         )
-        return response.choices[0].message.content
+        
+        ai_response = response.choices[0].message.content
+        
+        # Deanonymize the response if anonymization was used
+        if self.enable_anonymization and self.anonymizer and session_map:
+            ai_response = self.anonymizer.deanonymize_response(ai_response, session_map)
+            
+            # Add anonymization notice to the response
+            ai_response += f"\n\n=== PRIVACY NOTICE ===\n{anonymization_info}"
+        
+        return ai_response
 
     def diagnose_pod(self, metadata: dict):
         """
@@ -167,9 +193,20 @@ class LlmAgent:
         if not system_message:
             system_message = "You are a helpful AI assistant with expertise in Kubernetes, cloud infrastructure, and DevOps."
 
+        # Handle anonymization if enabled
+        session_map = {}
+        processed_prompt = prompt
+        
+        if self.enable_anonymization and self.anonymizer:
+            # For simple text prompts, we need to wrap it in a dict for anonymization
+            prompt_data = {"content": prompt}
+            processed_data, session_map = self.anonymizer.anonymize_data(prompt_data)
+            processed_prompt = processed_data.get("content", prompt)
+            logger.info(f"Anonymized text prompt: {len(session_map)} items")
+
         messages = [
             {"role": "system", "content": system_message},
-            {"role": "user", "content": prompt}
+            {"role": "user", "content": processed_prompt}
         ]
 
         response = self.client.chat.completions.create(
@@ -178,4 +215,54 @@ class LlmAgent:
             temperature=0.7,
         )
 
-        return response.choices[0].message.content
+        ai_response = response.choices[0].message.content
+        
+        # Deanonymize the response if anonymization was used
+        if self.enable_anonymization and self.anonymizer and session_map:
+            ai_response = self.anonymizer.deanonymize_response(ai_response, session_map)
+
+        return ai_response
+    
+    def preview_anonymization(self, metadata: dict) -> dict:
+        """
+        Preview what data would be anonymized without sending to OpenAI.
+        
+        Args:
+            metadata: The data that would be sent to OpenAI
+            
+        Returns:
+            Dictionary containing:
+            - 'anonymized_data': The data after anonymization
+            - 'mapping': The anonymization mapping
+            - 'summary': Human-readable summary
+        """
+        if not self.enable_anonymization or not self.anonymizer:
+            return {
+                'anonymized_data': metadata,
+                'mapping': {},
+                'summary': 'Anonymization is disabled'
+            }
+        
+        # Create a temporary anonymizer to avoid affecting the main one
+        temp_anonymizer = DataAnonymizer()
+        anonymized_data, session_map = temp_anonymizer.anonymize_data(metadata)
+        summary = temp_anonymizer.get_anonymization_summary(session_map)
+        
+        return {
+            'anonymized_data': anonymized_data,
+            'mapping': session_map,
+            'summary': summary
+        }
+    
+    def set_anonymization(self, enabled: bool):
+        """
+        Enable or disable anonymization.
+        
+        Args:
+            enabled: Whether to enable anonymization
+        """
+        self.enable_anonymization = enabled
+        if enabled and not self.anonymizer:
+            self.anonymizer = DataAnonymizer()
+        elif not enabled:
+            self.anonymizer = None

@@ -1085,6 +1085,54 @@ def generate_alert_description():
             "source": "fallback"
         }), 200  # Return 200 instead of 500 to avoid UI errors
 
+@app.route('/api/anonymization/preview', methods=['POST'])
+def preview_anonymization():
+    """
+    Preview what data would be anonymized before sending to OpenAI.
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        preview_result = llm_agent.preview_anonymization(data)
+        
+        return jsonify({
+            "success": True,
+            "preview": preview_result
+        })
+        
+    except Exception as e:
+        logger.error(f"Error previewing anonymization: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/anonymization/toggle', methods=['POST'])
+def toggle_anonymization():
+    """
+    Enable or disable anonymization for the LLM agent.
+    """
+    try:
+        data = request.json
+        enabled = data.get('enabled', True)
+        
+        llm_agent.set_anonymization(enabled)
+        
+        return jsonify({
+            "success": True,
+            "anonymization_enabled": enabled,
+            "message": f"Anonymization {'enabled' if enabled else 'disabled'}"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error toggling anonymization: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
 @app.route('/api/terminal/analyze', methods=['POST'])
 def terminal_analyze():
     """
