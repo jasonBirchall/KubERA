@@ -29,7 +29,7 @@ The playground command will automatically:
 - ✅ Check and install required tools (kind, kubectl, Docker, etc.)
 - 🔧 Create a local Kubernetes cluster
 - 📊 Install Prometheus and ArgoCD
-- 🚀 Deploy sample broken pods for testing
+- 🚀 Deploy sample workloads for testing
 - 🗄️ Set up the KubERA database
 
 Access the dashboard at **http://localhost:8501** after setup completes.
@@ -93,10 +93,10 @@ make run
 
 #### Test Pod Analysis
 ```bash
-# Create a failing pod
-kubectl run test-broken --image=nonexistent:latest
+# Create a test pod with image issue
+kubectl run test-workload --image=internal-registry.local/app:latest
 
-# Watch it appear in KubERA dashboard
+# Watch it appear in KubERA dashboard  
 # Click on it to see AI analysis
 ```
 

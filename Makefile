@@ -1,8 +1,8 @@
 CLUSTER_NAME := kubera-local
-BROKEN_DEMO_APP_DEPLOYMENT := hello-world-broken
-BROKEN_DEMO_APP_IMAGE := nginxdemos/hellos # Obviously broken image
-DEMO_APP_DEPLOYMENT := hello-world
+DEMO_APP_DEPLOYMENT := frontend-service
 DEMO_APP_IMAGE := nginxdemos/hello
+LEGACY_APP_DEPLOYMENT := payment-processor
+LEGACY_APP_IMAGE := nginxdemos/hellos
 DEMO_APP_PORT := 8080
 NODE_PORT := 30080
 KUBE_PORT := 80
@@ -32,7 +32,7 @@ help:
 	@echo ""
 	@echo "🧪 Testing & Demo:"
 	@echo "  make demo-app-up         Deploy demo applications"
-	@echo "  make create-many-failures Create test failing pods"
+	@echo "  make create-test-workloads Create test workloads"
 	@echo "  make create-demo-apps    Create ArgoCD demo applications"
 	@echo ""
 	@echo "🗄️  Database Management:"
@@ -123,7 +123,7 @@ playground: check-api-key check-dependencies
 	@echo "  • kind Kubernetes cluster"
 	@echo "  • Prometheus monitoring"
 	@echo "  • ArgoCD for GitOps"
-	@echo "  • Sample broken pods for testing"
+	@echo "  • Sample workloads for testing"
 	@echo "  • KubERA database and application"
 	@echo ""
 	@# Clean up any existing environment
@@ -156,10 +156,10 @@ playground: check-api-key check-dependencies
 	@$(MAKE) wait-for-argocd
 	@$(MAKE) install-argocd-apps
 	@echo ""
-	@# Create demo applications and broken pods
+	@# Create demo applications and test workloads
 	@echo "🚀 Creating demo applications..."
 	@$(MAKE) demo-app-up
-	@$(MAKE) create-many-failures
+	@$(MAKE) create-test-workloads
 	@$(MAKE) create-demo-apps 2>/dev/null || true
 	@echo ""
 	@# Generate some test data
@@ -217,11 +217,11 @@ cluster-down:
 	@echo "Deleting kind cluster named '$(CLUSTER_NAME)'..."
 	kind delete cluster --name $(CLUSTER_NAME)
 
-## Deploy the Hello World application.
+## Deploy the demo applications.
 demo-app-up:
 	@echo "Deploying '$(DEMO_APP_DEPLOYMENT)' using image '$(DEMO_APP_IMAGE)'..."
 	kubectl create deployment $(DEMO_APP_DEPLOYMENT) --image=$(DEMO_APP_IMAGE)
-	kubectl create deployment $(BROKEN_DEMO_APP_DEPLOYMENT) --image=$(BROKEN_DEMO_APP_IMAGE)
+	kubectl create deployment $(LEGACY_APP_DEPLOYMENT) --image=$(LEGACY_APP_IMAGE)
 	@echo "Waiting briefly for pods to start..."
 	# Optional short sleep to allow the Deployment to initialise
 	sleep 5
@@ -229,7 +229,7 @@ demo-app-up:
 demo-app-down:
 	@echo "Deleting deployment '$(DEMO_APP_DEPLOYMENT)'..."
 	kubectl delete deployment $(DEMO_APP_DEPLOYMENT)
-	kubectl delete deployment $(BROKEN_DEMO_APP_DEPLOYMENT)
+	kubectl delete deployment $(LEGACY_APP_DEPLOYMENT)
 
 ## Expose the deployment as a NodePort service.
 demo-app-expose:
@@ -239,13 +239,13 @@ demo-app-expose:
 		--port=$(KUBE_PORT) \
 		--overrides='{"spec":{"ports":[{"port":'$(KUBE_PORT)',"nodePort":'$(NODE_PORT)',"protocol":"TCP"}]}}'
 
-create-many-failures:
-	@echo "Create multiple failing pods in the 'default' namespace..."
-	kubectl apply -f k8s/broken-pod.yaml
+create-test-workloads:
+	@echo "Creating test workloads in the 'default' namespace..."
+	kubectl apply -f k8s/test-workloads.yaml
 
-destroy-many-failures:
-	@echo "Destroying multiple failing pods in the 'default' namespace..."
-	kubectl delete -f k8s/broken-pod.yaml
+destroy-test-workloads:
+	@echo "Removing test workloads from the 'default' namespace..."
+	kubectl delete -f k8s/test-workloads.yaml
 
 dashboard-local:
 	@echo "Starting Kubera Assistant dashboard on port $(DASHBOARD_PORT)..."
@@ -362,11 +362,11 @@ wait-for-argocd:
 ## Destroy the entire environment and clean up all resources
 destroy-all:
 	@echo "Starting clean-up of all resources..."
-	@echo "Removing failing pods..."
-	@kubectl delete -f k8s/broken-pod.yaml || true
+	@echo "Removing test workloads..."
+	@kubectl delete -f k8s/test-workloads.yaml || true
 	@echo "Removing demo applications..."
 	@kubectl delete deployment $(DEMO_APP_DEPLOYMENT) || true
-	@kubectl delete deployment $(BROKEN_DEMO_APP_DEPLOYMENT) || true
+	@kubectl delete deployment $(LEGACY_APP_DEPLOYMENT) || true
 	@kubectl delete service $(DEMO_APP_DEPLOYMENT) || true
 	@echo "Removing ArgoCD applications..."
 	@kubectl delete -f k8s/argocd-demo-apps.yaml || true

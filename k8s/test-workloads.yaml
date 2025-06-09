@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: analytics-worker
+  template:
+    metadata:
+      labels:
+        app: analytics-worker
+    spec:
+      containers:
+        - name: data-processor
+          image: busybox:1.36.1
+          # Data processing worker that encounters initialization issues
+          command: ["sh", "-c", "echo 'Initializing data processing...'; sleep 3; exit 1"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cache-service
+  template:
+    metadata:
+      labels:
+        app: cache-service
+    spec:
+      containers:
+        - name: redis-cache
+          image: busybox:1.36.1
+          resources:
+            requests:
+              memory: "64Mi"
+            limits:
+              memory: "64Mi"
+          # Cache service that pre-loads data into memory on startup
+          command:
+            [
+              "sh",
+              "-c",
+              "echo 'Preloading cache data...' && base64 /dev/urandom | head -c 200000000 > /dev/null",
+            ]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: notification-service
+  template:
+    metadata:
+      labels:
+        app: notification-service
+    spec:
+      containers:
+        - name: email-dispatcher
+          # Private registry image that requires authentication
+          image: internal-registry.company.local/notifications/dispatcher:v2.1.4
+          command: ["sh", "-c", "echo 'Starting email dispatcher service...' && sleep 300"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-session-manager
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: user-session-manager
+  template:
+    metadata:
+      labels:
+        app: user-session-manager
+    spec:
+      containers:
+        - name: session-handler
+          image: busybox:1.36.1
+          command:
+            ["sh", "-c", "echo 'Starting session management service...' && sleep 100000"]
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          # Service doesn't expose health endpoint properly

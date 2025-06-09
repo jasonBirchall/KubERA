@@ -22,7 +22,7 @@ That's it! The playground command will:
 - 🔧 Create a local Kubernetes cluster with kind
 - 📊 Install Prometheus for metrics monitoring
 - 🔄 Install ArgoCD for GitOps workflows
-- 🚀 Deploy sample applications and broken pods for testing
+- 🚀 Deploy sample applications and test workloads for testing
 - 🗄️ Initialize the KubERA database
 
 ## 📋 What Gets Installed
@@ -38,7 +38,7 @@ That's it! The playground command will:
 - **Local kind cluster** named `kubera-local`
 - **Prometheus** monitoring stack (namespace: `monitoring`)
 - **ArgoCD** GitOps platform (namespace: `argocd`)
-- **Sample applications** (working and broken pods)
+- **Sample applications** (working and test workloads)
 - **Local registry** for container images
 
 ## 🌐 Access URLs
@@ -100,7 +100,7 @@ make destroy-all && make playground
 Once your playground is running, try these scenarios:
 
 ### 1. **Pod Failure Analysis**
-- Click on broken pods in the KubERA dashboard
+- Click on problematic pods in the KubERA dashboard
 - Observe the AI-powered analysis in the terminal
 - Check the anonymization privacy notices
 
