@@ -278,8 +278,13 @@ test-prometheus:
 ## Reset the database to apply schema changes
 reset-db:
 	@echo "Resetting Kubera database..."
+	@# Remove existing database file if it exists
+	@rm -f kubera.db
+	@echo "Removed existing database file"
 	uv run python reset_db.py
-	@echo "✅ Database reset complete"
+	@# Ensure proper permissions
+	@chmod 644 kubera.db 2>/dev/null || true
+	@echo "✅ Database reset complete with proper permissions"
 
 ## Clean up the database by removing old entries and merging duplicates
 cleanup-db:

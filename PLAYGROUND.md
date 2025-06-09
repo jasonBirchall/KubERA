@@ -147,6 +147,15 @@ make playground
 kubectl config use-context kind-kubera-local
 ```
 
+**6. "Database read-only errors"**
+```bash
+# SQLite permission issues
+make reset-db
+
+# Or fix permissions manually
+chmod 644 kubera.db
+```
+
 ### Debug Commands:
 ```bash
 # Check cluster nodes
