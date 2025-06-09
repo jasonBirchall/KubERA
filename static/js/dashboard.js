@@ -683,8 +683,11 @@
       if (issue.pods && issue.pods.length > 0) {
         latestPod = issue.pods.reduce((acc, p) => {
           if (!acc) return p;
-          const accTime = new Date(acc.timestamp || acc.start);
-          const pTime = new Date(p.timestamp || p.start);
+          const accTime = KuberaUtils.parseTimestamp(acc.timestamp || acc.start);
+          const pTime = KuberaUtils.parseTimestamp(p.timestamp || p.start);
+          if (!accTime && !pTime) return acc;
+          if (!accTime) return p;
+          if (!pTime) return acc;
           return pTime > accTime ? p : acc;
         }, null);
       }
@@ -856,8 +859,8 @@
 
     // Sort by timestamp, newest first
     state.allIndividualEvents.sort((a, b) => {
-      const dateA = a.timestamp ? new Date(a.timestamp) : new Date();
-      const dateB = b.timestamp ? new Date(b.timestamp) : new Date();
+      const dateA = KuberaUtils.parseTimestamp(a.timestamp) || new Date(0);
+      const dateB = KuberaUtils.parseTimestamp(b.timestamp) || new Date(0);
       return dateB - dateA;
     });
 
@@ -1011,8 +1014,11 @@ function renderAnalysis(data, source = 'kubernetes') {
             <div class="overview-item">
               <span class="overview-label">Last Seen:</span>
               <span class="overview-value">${data.events_metadata.length > 0 ?
-        KuberaUtils.formatTimestamp(data.events_metadata.sort((a, b) =>
-          new Date(b.timestamp) - new Date(a.timestamp))[0].timestamp) : 'N/A'}</span>
+        KuberaUtils.formatTimestamp(data.events_metadata.sort((a, b) => {
+          const dateA = KuberaUtils.parseTimestamp(a.timestamp) || new Date(0);
+          const dateB = KuberaUtils.parseTimestamp(b.timestamp) || new Date(0);
+          return dateB - dateA;
+        })[0].timestamp) : 'N/A'}</span>
             </div>
             <div class="overview-item">
               <span class="overview-label">Issue Type:</span>

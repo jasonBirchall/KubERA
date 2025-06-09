@@ -214,8 +214,17 @@
           
           const commands = results.kubectl_commands.split('\n');
           for (const cmd of commands) {
-            if (cmd.trim()) {
-              await this.addCommandWithCopy(cmd.trim());
+            const trimmedCmd = cmd.trim();
+            if (trimmedCmd) {
+              // Check if this is an actual kubectl command or just explanatory text
+              if (this.isKubectlCommand(trimmedCmd)) {
+                // Remove any markdown backticks and add with copy functionality
+                const cleanCmd = this.cleanMarkdownFromCommand(trimmedCmd);
+                await this.addCommandWithCopy(cleanCmd);
+              } else {
+                // This is explanatory text, add as regular output without copy button
+                await this.addLine(trimmedCmd, 'output', 0);
+              }
             }
           }
         }
@@ -380,6 +389,36 @@
           button.innerHTML = '📋';
         }, 1000);
       }
+    }
+    
+    isKubectlCommand(text) {
+      // Helper method to determine if a line is an actual kubectl command
+      const trimmed = text.trim();
+      
+      // Remove common markdown markers first
+      const cleaned = trimmed.replace(/^```\w*\s*/, '').replace(/```$/, '').replace(/^`|`$/g, '').trim();
+      
+      // Check if it starts with kubectl or common shell patterns
+      return cleaned.startsWith('kubectl ') || 
+             cleaned.startsWith('$ kubectl ') ||
+             cleaned.startsWith('# kubectl ') ||
+             (cleaned.includes('kubectl ') && (cleaned.startsWith('$') || cleaned.startsWith('#')));
+    }
+    
+    cleanMarkdownFromCommand(text) {
+      // Helper method to clean markdown formatting from kubectl commands
+      let cleaned = text.trim();
+      
+      // Remove markdown code block markers
+      cleaned = cleaned.replace(/^```\w*\s*/, '').replace(/```$/, '');
+      
+      // Remove inline code markers
+      cleaned = cleaned.replace(/^`|`$/g, '');
+      
+      // Remove shell prompt markers but preserve the command
+      cleaned = cleaned.replace(/^\$\s*/, '').replace(/^#\s*/, '');
+      
+      return cleaned.trim();
     }
     
     // Legacy method - kept for backwards compatibility

@@ -28,10 +28,31 @@ const KuberaUtils = (function () {
   // Configure auto-refresh
   let refreshInterval;
 
+  // Helper to safely parse and format timestamp
+  function parseTimestamp(timestamp) {
+    if (!timestamp || timestamp === null || timestamp === undefined || timestamp === '') {
+      return null;
+    }
+    
+    try {
+      const date = new Date(timestamp);
+      // Check if the date is valid
+      if (isNaN(date.getTime())) {
+        console.warn('Invalid timestamp format:', timestamp);
+        return null;
+      }
+      return date;
+    } catch (error) {
+      console.warn('Error parsing timestamp:', timestamp, error);
+      return null;
+    }
+  }
+
   // Helper to format timestamp
   function formatTimestamp(timestamp) {
     if (!timestamp) return '-';
-    const date = new Date(timestamp);
+    const date = parseTimestamp(timestamp);
+    if (!date) return 'Invalid Date';
     return date.toLocaleString();
   }
 
@@ -186,9 +207,19 @@ const KuberaUtils = (function () {
       if (issue.pods?.length) {
         issue.pods.forEach(pod => {
           const ev = document.createElement('div');
-          const start = new Date(pod.start).getTime();
-          const end = pod.end ? new Date(pod.end).getTime()
-            : Date.now();          // still occurring
+          
+          // Safely parse start and end times
+          const startDate = parseTimestamp(pod.start);
+          const endDate = pod.end ? parseTimestamp(pod.end) : null;
+          
+          // Skip this pod if start time is invalid
+          if (!startDate) {
+            console.warn('Skipping pod with invalid start time:', pod);
+            return;
+          }
+          
+          const start = startDate.getTime();
+          const end = endDate ? endDate.getTime() : Date.now(); // still occurring
           const leftPct = percentAlong(windowStart, windowEnd, start);
           const widthPct = Math.max(
             percentAlong(windowStart, windowEnd, end) - leftPct,
@@ -209,8 +240,8 @@ const KuberaUtils = (function () {
             `Pod: ${pod.name}`,
             `Namespace: ${pod.namespace}`,
             `Source: ${pod.source || issue.source || 'kubernetes'}`,
-            `Started: ${new Date(pod.start).toLocaleString()}`,
-            pod.end ? `Ended: ${new Date(pod.end).toLocaleString()}`
+            `Started: ${formatTimestamp(pod.start)}`,
+            endDate ? `Ended: ${formatTimestamp(pod.end)}`
               : 'Still occurring'
           ];
 
@@ -490,6 +521,7 @@ const KuberaUtils = (function () {
   return {
     state,
     elements,
+    parseTimestamp,
     formatTimestamp,
     percentAlong,
     fetchTimelineData,
