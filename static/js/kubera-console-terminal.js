@@ -133,6 +133,14 @@
         case 'separator':
           line.style.color = '#444';
           break;
+        case 'react-trace':
+          line.style.color = '#8eb4e6';  // Light blue for ReAct reasoning
+          line.style.fontSize = '13px';
+          break;
+        case 'react-performance':
+          line.style.color = '#a8e6a8';  // Light green for performance metrics
+          line.style.fontSize = '12px';
+          break;
         case 'raw':
           // No special styling for raw output
           break;
@@ -189,15 +197,23 @@
         // Add separator line for visual clarity
         await this.addLine('─'.repeat(60), 'separator', 0);
         
-        // Output root cause analysis with enhanced formatting
-        await this.addLine('\n🔍 ROOT CAUSE ANALYSIS', 'analysis-header', 0);
-        await this.addLine('─'.repeat(25), 'separator', 0);
+        // Check if this is a ReAct diagnosis (contains ReAct trace)
+        const isReActDiagnosis = results.raw_output && results.raw_output.includes('=== REACT DIAGNOSIS TRACE ===');
         
-        // Format root cause with better line breaks
-        const rootCauseText = results.rootCause || 'Unable to determine root cause';
-        const rootCauseLines = this.wrapText(rootCauseText, 80);
-        for (const line of rootCauseLines) {
-          await this.addLine(line, 'analysis-content', 0);
+        if (isReActDiagnosis) {
+          // Special handling for ReAct output
+          await this.displayReActOutput(results.raw_output);
+        } else {
+          // Traditional single-shot output
+          await this.addLine('\n🔍 ROOT CAUSE ANALYSIS', 'analysis-header', 0);
+          await this.addLine('─'.repeat(25), 'separator', 0);
+          
+          // Format root cause with better line breaks
+          const rootCauseText = results.rootCause || 'Unable to determine root cause';
+          const rootCauseLines = this.wrapText(rootCauseText, 80);
+          for (const line of rootCauseLines) {
+            await this.addLine(line, 'analysis-content', 0);
+          }
         }
         
         // Output recommendations with enhanced formatting
@@ -446,6 +462,73 @@
       cleaned = cleaned.replace(/^\$\s*/, '').replace(/^#\s*/, '');
       
       return cleaned.trim();
+    }
+    
+    async displayReActOutput(rawOutput) {
+      // Display ReAct diagnosis output with special formatting
+      const sections = rawOutput.split('===');
+      let currentSection = '';
+      
+      for (let i = 0; i < sections.length; i++) {
+        const section = sections[i].trim();
+        if (!section) continue;
+        
+        if (section.includes('REACT DIAGNOSIS TRACE')) {
+          await this.addLine('\n🧠 REACT REASONING TRACE', 'analysis-header', 0);
+          await this.addLine('─'.repeat(30), 'separator', 0);
+          currentSection = 'trace';
+        } else if (section.includes('ROOT CAUSE ANALYSIS')) {
+          await this.addLine('\n🔍 ROOT CAUSE ANALYSIS', 'analysis-header', 0);
+          await this.addLine('─'.repeat(25), 'separator', 0);
+          currentSection = 'analysis';
+        } else if (section.includes('RECOMMENDED ACTIONS')) {
+          await this.addLine('\n🛠️  RECOMMENDED ACTIONS', 'analysis-header', 0);
+          await this.addLine('─'.repeat(25), 'separator', 0);
+          currentSection = 'actions';
+        } else if (section.includes('KUBECTL COMMANDS EXECUTED')) {
+          await this.addLine('\n⚡ KUBECTL COMMANDS EXECUTED', 'analysis-header', 0);
+          await this.addLine('─'.repeat(35), 'separator', 0);
+          currentSection = 'commands';
+        } else if (section.includes('REACT PERFORMANCE')) {
+          await this.addLine('\n📊 REACT PERFORMANCE METRICS', 'analysis-header', 0);
+          await this.addLine('─'.repeat(32), 'separator', 0);
+          currentSection = 'performance';
+        } else if (section.includes('PRIVACY NOTICE')) {
+          await this.addLine('\n🔒 PRIVACY & ANONYMIZATION', 'analysis-header', 0);
+          await this.addLine('─'.repeat(30), 'separator', 0);
+          currentSection = 'privacy';
+        } else {
+          // This is content for the current section
+          const lines = section.split('\n');
+          for (const line of lines) {
+            if (line.trim()) {
+              const displayType = this.getReActLineType(line, currentSection);
+              await this.addLine(line.trim(), displayType, 0);
+            }
+          }
+        }
+      }
+    }
+    
+    getReActLineType(line, section) {
+      // Determine display type for ReAct output lines
+      if (section === 'trace') {
+        if (line.includes('🧠 REASONING:') || line.includes('🎯 SELECTED:') || line.includes('⚡ ACTING:')) {
+          return 'react-trace';
+        }
+        return 'analysis-content';
+      } else if (section === 'performance') {
+        return 'react-performance';
+      } else if (section === 'commands') {
+        if (line.startsWith('$ ')) {
+          return 'command-text';
+        }
+        return 'output';
+      } else if (section === 'privacy') {
+        return 'privacy-info';
+      }
+      
+      return 'analysis-content';
     }
     
     // Legacy method - kept for backwards compatibility

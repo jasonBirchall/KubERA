@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.DEBUG)
 k8s_tool = K8sTool()
 prometheus_tool = PrometheusTool()  # Using default localhost:9090
 argocd_tool = ArgoCDTool(base_url="http://localhost:8501")
-llm_agent = LlmAgent()
+llm_agent = LlmAgent(enable_react=True)  # Enable ReAct by default
 
 app = Flask(__name__)
 app.logger.setLevel(logging.DEBUG)
@@ -1128,6 +1128,59 @@ def toggle_anonymization():
         
     except Exception as e:
         logger.error(f"Error toggling anonymization: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/react/status', methods=['GET'])
+def get_react_status():
+    """
+    Get current ReAct agent status and configuration.
+    """
+    try:
+        status = llm_agent.get_react_status()
+        return jsonify({
+            "success": True,
+            "react_status": status
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting ReAct status: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/api/react/configure', methods=['POST'])
+def configure_react():
+    """
+    Configure ReAct agent settings.
+    """
+    try:
+        data = request.json
+        enabled = data.get('enabled', True)
+        
+        # Extract ReAct configuration
+        react_config = {}
+        if 'max_iterations' in data:
+            react_config['max_iterations'] = int(data['max_iterations'])
+        if 'confidence_threshold' in data:
+            react_config['confidence_threshold'] = float(data['confidence_threshold'])
+        if 'command_timeout' in data:
+            react_config['command_timeout'] = int(data['command_timeout'])
+        
+        # Update ReAct configuration
+        llm_agent.set_react_mode(enabled, **react_config)
+        
+        return jsonify({
+            "success": True,
+            "message": f"ReAct mode {'enabled' if enabled else 'disabled'}",
+            "react_status": llm_agent.get_react_status()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error configuring ReAct: {str(e)}")
         return jsonify({
             "success": False,
             "error": str(e)

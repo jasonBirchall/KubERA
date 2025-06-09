@@ -1,18 +1,32 @@
 import json
 import logging
+import asyncio
+from typing import Dict, Any
 
 from openai import OpenAI
 from .data_anonymizer import DataAnonymizer
+from .react_agent import ReActAgent
 
 logger = logging.getLogger(__name__)
 
 
 class LlmAgent:
-    def __init__(self, model="gpt-4", enable_anonymization=True):
+    def __init__(self, model="gpt-4", enable_anonymization=True, enable_react=False):
         self.client = OpenAI()
         self.model = model
         self.enable_anonymization = enable_anonymization
+        self.enable_react = enable_react
         self.anonymizer = DataAnonymizer() if enable_anonymization else None
+        
+        # Initialize ReAct agent if enabled
+        self.react_agent = None
+        if enable_react:
+            self.react_agent = ReActAgent(
+                llm_client=self.client,
+                max_iterations=3,
+                confidence_threshold=8.0,
+                enable_anonymization=enable_anonymization
+            )
 
     def diagnose_argocd_app(self, metadata: dict):
         """
@@ -77,6 +91,9 @@ class LlmAgent:
         """
         Diagnose Kubernetes pod failures using metadata from k8s_tool.gather_metadata().
         
+        Uses ReAct (Reasoning + Acting) loop if enabled, otherwise falls back to 
+        traditional single-shot diagnosis.
+        
         Expected metadata structure:
         {
             "namespace": str,
@@ -95,6 +112,69 @@ class LlmAgent:
         
         Returns a structured diagnosis with root cause analysis and recommendations.
         """
+        if self.enable_react and self.react_agent:
+            return self._diagnose_with_react(metadata)
+        else:
+            return self._diagnose_traditional(metadata)
+    
+    def _diagnose_with_react(self, metadata: dict):
+        """Diagnose using ReAct iterative reasoning and acting"""
+        logger.info("Using ReAct agent for pod diagnosis")
+        
+        try:
+            # Run ReAct diagnosis asynchronously
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're already in an event loop, create a new thread
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self.react_agent.diagnose(metadata))
+                    result = future.result(timeout=120)  # 2 minute timeout
+            else:
+                # Run directly if no event loop is running
+                result = asyncio.run(self.react_agent.diagnose(metadata))
+            
+            # Format ReAct result for traditional interface compatibility
+            return self._format_react_result(result)
+            
+        except Exception as e:
+            logger.error(f"ReAct diagnosis failed, falling back to traditional: {str(e)}")
+            return self._diagnose_traditional(metadata)
+    
+    def _format_react_result(self, react_result):
+        """Format ReAct result to match traditional diagnosis format"""
+        output_parts = []
+        
+        # Add reasoning trace
+        output_parts.append("=== REACT DIAGNOSIS TRACE ===")
+        for trace_item in react_result.reasoning_trace:
+            output_parts.append(trace_item)
+        
+        # Add main diagnosis
+        output_parts.append(f"\n{react_result.final_diagnosis}")
+        
+        # Add kubectl commands
+        if react_result.kubectl_commands_used:
+            output_parts.append("\n=== KUBECTL COMMANDS EXECUTED ===")
+            for cmd in react_result.kubectl_commands_used:
+                output_parts.append(f"$ {cmd}")
+        
+        # Add performance metrics
+        output_parts.append(f"\n=== REACT PERFORMANCE ===")
+        output_parts.append(f"Iterations: {len(react_result.iterations)}")
+        output_parts.append(f"Commands executed: {react_result.total_commands_executed}")
+        output_parts.append(f"Total time: {react_result.total_execution_time:.2f}s")
+        output_parts.append(f"Final confidence: {react_result.confidence_score:.1f}/10.0")
+        
+        # Add anonymization notice if applicable
+        if self.enable_anonymization:
+            output_parts.append(f"\n=== PRIVACY NOTICE ===")
+            output_parts.append("Data was anonymized before AI analysis and restored in this response.")
+        
+        return "\n".join(output_parts)
+    
+    def _diagnose_traditional(self, metadata: dict):
+        """Traditional single-shot diagnosis method"""
         # Handle anonymization if enabled
         session_map = {}
         processed_metadata = metadata
@@ -266,3 +346,65 @@ class LlmAgent:
             self.anonymizer = DataAnonymizer()
         elif not enabled:
             self.anonymizer = None
+        
+        # Update ReAct agent anonymization setting if it exists
+        if self.react_agent:
+            self.react_agent.enable_anonymization = enabled
+            if enabled and not self.react_agent.anonymizer:
+                self.react_agent.anonymizer = DataAnonymizer()
+            elif not enabled:
+                self.react_agent.anonymizer = None
+    
+    def set_react_mode(self, enabled: bool, **react_config):
+        """
+        Enable or disable ReAct mode.
+        
+        Args:
+            enabled: Whether to enable ReAct mode
+            **react_config: Additional ReAct configuration options
+                - max_iterations: Maximum ReAct iterations (default: 3)
+                - confidence_threshold: Stop when hypothesis reaches this confidence (default: 8.0)
+                - command_timeout: Timeout for kubectl commands (default: 30)
+        """
+        self.enable_react = enabled
+        
+        if enabled:
+            if not self.react_agent:
+                self.react_agent = ReActAgent(
+                    llm_client=self.client,
+                    max_iterations=react_config.get('max_iterations', 3),
+                    confidence_threshold=react_config.get('confidence_threshold', 8.0),
+                    enable_anonymization=self.enable_anonymization,
+                    command_timeout=react_config.get('command_timeout', 30)
+                )
+                logger.info("ReAct mode enabled")
+            else:
+                # Update existing ReAct agent configuration
+                self.react_agent.max_iterations = react_config.get('max_iterations', self.react_agent.max_iterations)
+                self.react_agent.confidence_threshold = react_config.get('confidence_threshold', self.react_agent.confidence_threshold)
+                self.react_agent.command_timeout = react_config.get('command_timeout', self.react_agent.command_timeout)
+                logger.info("ReAct configuration updated")
+        else:
+            self.react_agent = None
+            logger.info("ReAct mode disabled")
+    
+    def get_react_status(self) -> Dict[str, Any]:
+        """
+        Get current ReAct configuration status.
+        
+        Returns:
+            Dictionary with ReAct status and configuration
+        """
+        if not self.enable_react or not self.react_agent:
+            return {
+                "enabled": False,
+                "reason": "ReAct mode is disabled"
+            }
+        
+        return {
+            "enabled": True,
+            "max_iterations": self.react_agent.max_iterations,
+            "confidence_threshold": self.react_agent.confidence_threshold,
+            "command_timeout": self.react_agent.command_timeout,
+            "anonymization_enabled": self.react_agent.enable_anonymization
+        }
