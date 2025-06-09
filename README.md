@@ -83,7 +83,7 @@ make run
 
 ### Step 5: Explore the Interface
 
-1. **Open the Dashboard**: http://localhost:8501
+1. **Open the Dashboard**: http://localhost:5000
 2. **View the Timeline**: See events from all sources
 3. **Click on Broken Pods**: Get AI-powered analysis
 4. **Explore Filters**: Filter by namespace, severity, source
